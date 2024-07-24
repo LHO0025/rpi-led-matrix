@@ -20,8 +20,12 @@ while True:
         resp = requests.get("http://192.168.88.178:81/splash_art_url")        
         splash_art_data = requests.get(resp.text).content
         splash_art_img = Image.open(io.BytesIO(splash_art_data))
-        splash_art_img.thumbnail((64, 64), Image.Resampling.LANCZOS)
-        matrix.SetImage(splash_art_img.convert('RGB'))
+        width, height = splash_art_img.size
+        square_size = width
+        crop_box = (0, 0, square_size, square_size)
+        cropped_image = splash_art_img.crop(crop_box)
+        cropped_image.thumbnail((64, 64), Image.Resampling.LANCZOS)
+        matrix.SetImage(cropped_image.convert('RGB'))
     except:
         print("asdasdasd")
     time.sleep(1)  
