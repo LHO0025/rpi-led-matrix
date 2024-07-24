@@ -30,7 +30,7 @@ def fetch_thread():
             if player:
                 champion_name = player['championName']
                 skin_id = player['skinID']
-                current_splash_art_url = f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion_name}_{skin_id}.jpg"
+                current_splash_art_url = f"https://ddragon.leagueoflegends.com/cdn/img/champion/loading/{champion_name}_{skin_id}.jpg"
                 print(f"Updated current_splash_art_url to: {current_splash_art_url}")
             else:
                 print("Player not found")
