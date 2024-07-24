@@ -18,10 +18,11 @@ matrix = RGBMatrix(options = options)
 while True:
     try:
         resp = requests.get("http://192.168.88.178:81/splash_art_url")        
-        splash_art_data = requests.get(resp.raw, verify=False).content
+        splash_art_data = requests.get(resp.text).content
         splash_art_img = Image.open(io.BytesIO(splash_art_data))
         splash_art_img.thumbnail((64, 64), Image.Resampling.LANCZOS)
+        splash_art_img.show()
         matrix.SetImage(splash_art_img.convert('RGB'))
     except:
-        pass
+        print("asdasdasd")
     time.sleep(1)  
