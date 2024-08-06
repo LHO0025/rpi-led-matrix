@@ -29,6 +29,11 @@ prev_img_url = ""
 current_image = None
 current_song_name = ""
 
+def darken_color(color, factor=0.1):
+    factor = max(0, min(1, factor))
+    darkened_color = tuple(int(c * (1 - factor)) for c in color)
+    return darkened_color
+
 def thread_function(matrix):
     # offscreen_canvas = matrix.CreateFrameCanvas()
     font = graphics.Font()
@@ -47,8 +52,7 @@ def thread_function(matrix):
                 for x in range(0, matrix.width):
                     coordinates = (x, matrix.height - 10 - y)
                     pixel = current_image.getpixel(coordinates)
-                    print("reee", pixel)
-                    current_image.putpixel(coordinates, (255, 0, 0))
+                    current_image.putpixel(coordinates, darken_color(pixel))
             
             matrix.SetImage(current_image.convert('RGB'))
             
