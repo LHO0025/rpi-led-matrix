@@ -50,13 +50,13 @@ def thread_function(matrix):
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
             for y in range(0, 11):
                 for x in range(0, matrix.width):
-                    coordinates = (x, matrix.height - 10 - y)
+                    coordinates = (x, matrix.height - y)
                     pixel = current_image.getpixel(coordinates)
                     current_image.putpixel(coordinates, darken_color(pixel))
             
             matrix.SetImage(current_image.convert('RGB'))
             
-            len = graphics.DrawText(matrix, font, pos, matrix.height - 10, textColor, current_song_name)
+            len = graphics.DrawText(matrix, font, pos, matrix.height, textColor, current_song_name)
             pos -= 1
             if (pos + len < 0):
                 pos = matrix.width
