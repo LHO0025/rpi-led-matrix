@@ -48,7 +48,7 @@ def thread_function(matrix):
             
             # red = graphics.Color(255, 0, 0)
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
-            for y in range(0, 10):
+            for y in range(0, 11):
                 for x in range(0, matrix.width):
                     coordinates = (x, matrix.height - 10 - y)
                     pixel = current_image.getpixel(coordinates)
