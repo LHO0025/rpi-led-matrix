@@ -22,6 +22,7 @@ img_data = requests.get(img_url).content
 image = Image.open(io.BytesIO(img_data))
 
 
+
 width, height = image.size
 
 if width > height:
