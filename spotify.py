@@ -38,7 +38,7 @@ def thread_function(matrix):
         if current_image is not None:
             # matrix.Clear()
             matrix.SetImage(current_image.convert('RGB'))
-            len = graphics.DrawText(matrix, font, pos, 10, textColor, current_song_name)
+            len = graphics.DrawText(matrix, font, pos, matrix.height - 10, textColor, current_song_name)
             pos -= 1
             if (pos + len < 0):
                 pos = matrix.width
