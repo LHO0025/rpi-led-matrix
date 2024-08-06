@@ -34,14 +34,14 @@ def thread_function(matrix):
     my_text = "asdashdjkashkdahksjd"
 
     while True:
-        offscreen_canvas.Clear()
-        len = graphics.DrawText(offscreen_canvas, font, pos, 10, textColor, my_text)
+        matrix.Clear()
+        len = graphics.DrawText(matrix, font, pos, 10, textColor, my_text)
         pos -= 1
         if (pos + len < 0):
-            pos = offscreen_canvas.width
+            pos = matrix.width
 
         time.sleep(0.05)
-        offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
+        # offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
 
 x = threading.Thread(target=thread_function, args=[matrix])
 x.start()
