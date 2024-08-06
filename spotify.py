@@ -44,7 +44,7 @@ def thread_function(matrix):
                 pos = matrix.width
 
             time.sleep(0.05)
-        # offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
+        offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
 
 x = threading.Thread(target=thread_function, args=[matrix])
 x.start()
