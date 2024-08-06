@@ -40,6 +40,10 @@ def thread_function(matrix):
         if current_image is not None:
             # matrix.Clear()
             matrix.SetImage(current_image.convert('RGB'))
+            
+            red = graphics.Color(255, 0, 0)
+            graphics.DrawLine(matrix, 5, 5, 22, 13, red)
+            
             len = graphics.DrawText(matrix, font, pos, matrix.height - 10, textColor, current_song_name)
             pos -= 1
             if (pos + len < 0):
