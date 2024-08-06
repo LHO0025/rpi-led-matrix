@@ -29,7 +29,7 @@ prev_img_url = ""
 current_image = None
 current_song_name = ""
 
-def darken_color(color, factor=0.1):
+def darken_color(color, factor=0.05):
     factor = max(0, min(1, factor))
     darkened_color = tuple(int(c * (1 - factor)) for c in color)
     return darkened_color
