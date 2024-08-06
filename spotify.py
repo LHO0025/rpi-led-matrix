@@ -26,11 +26,11 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="72dfcbd58ae646a08e3a4e
 prev_img_url = ""
 
 def thread_function(matrix):
-    offscreen_canvas = matrix.CreateFrameCanvas()
+    # offscreen_canvas = matrix.CreateFrameCanvas()
     font = graphics.Font()
     font.LoadFont("./7x13.bdf")
     textColor = graphics.Color(255, 255, 0)
-    pos = offscreen_canvas.width
+    pos = matrix.width
     my_text = "asdashdjkashkdahksjd"
 
     while True:
