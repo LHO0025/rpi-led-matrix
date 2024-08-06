@@ -26,22 +26,23 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="72dfcbd58ae646a08e3a4e
 prev_img_url = ""
 
 def thread_function(matrix):
-    offscreen_canvas = matrix.CreateFrameCanvas()
-    font = graphics.Font()
-    font.LoadFont("../../../fonts/7x13.bdf")
-    textColor = graphics.Color(255, 255, 0)
-    pos = offscreen_canvas.width
-    my_text = "asdashdjkashkdahksjd"
+    pass
+    # offscreen_canvas = matrix.CreateFrameCanvas()
+    # font = graphics.Font()
+    # font.LoadFont("../../../fonts/7x13.bdf")
+    # textColor = graphics.Color(255, 255, 0)
+    # pos = offscreen_canvas.width
+    # my_text = "asdashdjkashkdahksjd"
 
-    while True:
-        offscreen_canvas.Clear()
-        len = graphics.DrawText(offscreen_canvas, font, pos, 10, textColor, my_text)
-        pos -= 1
-        if (pos + len < 0):
-            pos = offscreen_canvas.width
+    # while True:
+    #     offscreen_canvas.Clear()
+    #     len = graphics.DrawText(offscreen_canvas, font, pos, 10, textColor, my_text)
+    #     pos -= 1
+    #     if (pos + len < 0):
+    #         pos = offscreen_canvas.width
 
-        time.sleep(0.05)
-        offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
+    #     time.sleep(0.05)
+    #     offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
 
 x = threading.Thread(target=thread_function, args=(matrix))
 x.start()
