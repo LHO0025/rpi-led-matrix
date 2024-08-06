@@ -45,7 +45,10 @@ def thread_function(matrix):
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
             for y in range(0, 10):
                 for x in range(0, matrix.width):
-                    current_image.putpixel((x, matrix.height - 10 - y), (255, 0, 0))
+                    coordinates = (x, matrix.height - 10 - y)
+                    pixel = current_image.getpixel(coordinates)
+                    print("reee", pixel)
+                    current_image.putpixel(coordinates, (255, 0, 0))
             
             matrix.SetImage(current_image.convert('RGB'))
             
