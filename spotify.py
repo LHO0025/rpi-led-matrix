@@ -39,19 +39,22 @@ def thread_function(matrix):
     while True:
         if current_image is not None:
             # matrix.Clear()
-            matrix.SetImage(current_image.convert('RGB'))
             
-            red = graphics.Color(120, 0, 0)
+            
+            # red = graphics.Color(255, 0, 0)
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
             for y in range(0, 10):
-                graphics.DrawLine(matrix, 0, matrix.height - 10 - y, matrix.width, matrix.height - 10 - y, red)
+                for x in range(0, matrix.width):
+                    current_image.putpixel((x, matrix.height - 10 - y), (255, 0, 0))
+            
+            matrix.SetImage(current_image.convert('RGB'))
             
             len = graphics.DrawText(matrix, font, pos, matrix.height - 10, textColor, current_song_name)
             pos -= 1
             if (pos + len < 0):
                 pos = matrix.width
 
-            time.sleep(0.5)
+            time.sleep(0.1)
         # matrix = matrix.SwapOnVSync(matrix)
 
 x = threading.Thread(target=thread_function, args=[matrix])
