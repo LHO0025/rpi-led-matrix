@@ -23,8 +23,7 @@ matrix = RGBMatrix(options = options)
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="72dfcbd58ae646a08e3a4e2dfa10d610",
                                                client_secret="eff663d28afb4f298f230c9f6e7857f6",
                                                redirect_uri="http://127.0.0.1:8888/callback",
-                                               scope="user-read-currently-playing",
-                                               cache_path='./tokens.txt'))
+                                               scope="user-read-currently-playing"))
 
 prev_img_url = ""
 current_image = None
