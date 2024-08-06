@@ -41,11 +41,10 @@ def thread_function(matrix):
             # matrix.Clear()
             matrix.SetImage(current_image.convert('RGB'))
             
-            # red = graphics.Color(255, 0, 0)
+            red = graphics.Color(255, 0, 0)
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
             for y in range(0, 10):
-                for x in range(0, matrix.width):
-                    matrix.SetPixel(x, matrix.height - 10 - y, 255, 255, 255)
+                graphics.DrawLine(matrix, 0, matrix.height - 10 - y, matrix.width, matrix.height - 10 - y, red)
             
             len = graphics.DrawText(matrix, font, pos, matrix.height - 10, textColor, current_song_name)
             pos -= 1
