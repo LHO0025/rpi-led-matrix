@@ -56,7 +56,7 @@ def thread_function(matrix):
             
             matrix.SetImage(current_image.convert('RGB'))
             
-            len = graphics.DrawText(matrix, font, pos, matrix.height, textColor, current_song_name)
+            len = graphics.DrawText(matrix, font, pos, matrix.height - 1, textColor, current_song_name)
             pos -= 1
             if (pos + len < 0):
                 pos = matrix.width
