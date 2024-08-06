@@ -41,7 +41,7 @@ def thread_function(matrix):
             # matrix.Clear()
             matrix.SetImage(current_image.convert('RGB'))
             
-            red = graphics.Color(255, 0, 0)
+            red = graphics.Color(120, 0, 0)
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
             for y in range(0, 10):
                 graphics.DrawLine(matrix, 0, matrix.height - 10 - y, matrix.width, matrix.height - 10 - y, red)
