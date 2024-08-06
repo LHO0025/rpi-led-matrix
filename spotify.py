@@ -38,7 +38,7 @@ def thread_function(matrix):
     # offscreen_canvas = matrix.CreateFrameCanvas()
     font = graphics.Font()
     font.LoadFont("./7x13.bdf")
-    textColor = graphics.Color(255, 255, 0)
+    textColor = graphics.Color(255, 255, 255)
     pos = matrix.width
 
     while True:
