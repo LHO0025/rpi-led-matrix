@@ -51,7 +51,7 @@ def thread_function(matrix):
             if (pos + len < 0):
                 pos = matrix.width
 
-            time.sleep(0.1)
+            time.sleep(0.5)
         # matrix = matrix.SwapOnVSync(matrix)
 
 x = threading.Thread(target=thread_function, args=[matrix])
