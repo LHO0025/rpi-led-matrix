@@ -37,7 +37,7 @@ def thread_function(matrix):
     while True:
         if current_image is not None:
             matrix.Clear()
-            matrix.SetImage(image.convert('RGB'))
+            matrix.SetImage(current_image.convert('RGB'))
             len = graphics.DrawText(matrix, font, pos, 10, textColor, my_text)
             pos -= 1
             if (pos + len < 0):
