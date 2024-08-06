@@ -34,7 +34,7 @@ def thread_function(matrix):
     my_text = "asdashdjkashkdahksjd"
 
     while True:
-        matrix.Clear()
+        # matrix.Clear()
         len = graphics.DrawText(matrix, font, pos, 10, textColor, my_text)
         pos -= 1
         if (pos + len < 0):
