@@ -50,7 +50,7 @@ def thread_function(matrix):
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
             for y in range(0, 11):
                 for x in range(0, matrix.width):
-                    coordinates = (x, matrix.height - y)
+                    coordinates = (x, matrix.height - 1 -  y)
                     pixel = current_image.getpixel(coordinates)
                     current_image.putpixel(coordinates, darken_color(pixel))
             
