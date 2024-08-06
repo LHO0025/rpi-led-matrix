@@ -24,6 +24,7 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="72dfcbd58ae646a08e3a4e
                                                scope="user-read-currently-playing"))
 
 prev_img_url = ""
+current_image = None
 
 def thread_function(matrix):
     # offscreen_canvas = matrix.CreateFrameCanvas()
@@ -34,13 +35,15 @@ def thread_function(matrix):
     my_text = "asdashdjkashkdahksjd"
 
     while True:
-        # matrix.Clear()
-        len = graphics.DrawText(matrix, font, pos, 10, textColor, my_text)
-        pos -= 1
-        if (pos + len < 0):
-            pos = matrix.width
+        if current_image is not None:
+            matrix.Clear()
+            matrix.SetImage(image.convert('RGB'))
+            len = graphics.DrawText(matrix, font, pos, 10, textColor, my_text)
+            pos -= 1
+            if (pos + len < 0):
+                pos = matrix.width
 
-        time.sleep(0.05)
+            time.sleep(0.05)
         # offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
 
 x = threading.Thread(target=thread_function, args=[matrix])
@@ -55,7 +58,8 @@ while True:
             img_data = requests.get(imageURL).content
             image = Image.open(io.BytesIO(img_data))
             image.thumbnail((matrix.width, matrix.height), Image.Resampling.LANCZOS)
-            matrix.SetImage(image.convert('RGB'))
+            current_image = image
+            # matrix.SetImage(image.convert('RGB'))
     except:
         print("there was an error")
     
