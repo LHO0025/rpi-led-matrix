@@ -48,13 +48,14 @@ def thread_function(matrix):
             
             # red = graphics.Color(255, 0, 0)
             # graphics.DrawLine(matrix, 5, 5, 22, 13, red)
+            img_copy = current_image.copy() 
             for y in range(0, 11):
                 for x in range(0, matrix.width):
                     coordinates = (x, matrix.height - 1 -  y)
                     pixel = current_image.getpixel(coordinates)
-                    current_image.putpixel(coordinates, darken_color(pixel))
+                    img_copy.putpixel(coordinates, darken_color(pixel))
             
-            matrix.SetImage(current_image.convert('RGB'))
+            matrix.SetImage(img_copy.convert('RGB'))
             
             len = graphics.DrawText(matrix, font, pos, matrix.height - 1, textColor, current_song_name)
             pos -= 1
