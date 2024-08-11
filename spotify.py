@@ -54,7 +54,7 @@ def thread_function(matrix):
                 for x in range(0, matrix.width):
                     coordinates = (x, matrix.height - 1 -  y)
                     pixel = current_image.getpixel(coordinates)
-                    img_copy.putpixel(coordinates, darken_color(pixel))
+                    img_copy.putpixel(coordinates, pixel)
             
             matrix.SetImage(img_copy.convert('RGB'))
             
