@@ -7,8 +7,8 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from PIL import Image
 
 
-img_data = requests.get(sys.argv[1]).content
-gif = Image.open(io.BytesIO(img_data))
+# img_data = requests.get(sys.argv[1]).content
+gif = Image.open(sys.argv[1])
 
 try:
     num_frames = gif.n_frames
