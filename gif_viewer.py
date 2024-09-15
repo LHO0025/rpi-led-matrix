@@ -54,4 +54,5 @@ try:
         else:
             cur_frame += 1
 except KeyboardInterrupt:
+    print("KONCIM")
     sys.exit(0)
