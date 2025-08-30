@@ -11,8 +11,8 @@ HOLD_SECONDS = 5
 # Separate timings for OUT and IN so you can exaggerate the “dim then light up” feel
 FADE_OUT_STEPS = 28      # more steps = slower/smoother
 FADE_IN_STEPS  = 32
-FADE_OUT_FPS   = 40      # lower FPS = slower fade
-FADE_IN_FPS    = 40
+FADE_OUT_FPS   = 28      # lower FPS = slower fade
+FADE_IN_FPS    = 32
 
 GAMMA = 2.2
 BRIGHTNESS = 70
