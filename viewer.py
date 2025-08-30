@@ -34,7 +34,7 @@ try:
         for image_file in image_files:
             print(f"Displaying {image_file}")
             image = Image.open(image_file)
-            image.thumbnail((matrix.width, matrix.height), Image.ANTIALIAS)
+            image.thumbnail((matrix.width, matrix.height), Image.LANCZOS)
             matrix.SetImage(image.convert('RGB'))
             time.sleep(15)  # show each image for 15 seconds
 except KeyboardInterrupt:
