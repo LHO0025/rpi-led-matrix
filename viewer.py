@@ -3,13 +3,14 @@ import time
 import sys
 import os
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
-from PIL import Image, ImageEnhance
+from PIL import Image
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
-HOLD_SECONDS = 15           # time each image is fully shown (no fade)
-FADE_STEPS = 30             # more steps = smoother fade
-FADE_DELAY = 0.03           # delay between fade frames (seconds)
+HOLD_SECONDS = 15      # time each image is fully shown
+FADE_DELAY = 0.03      # seconds between brightness steps
+BRIGHTNESS = 75        # max brightness (0-100)
+FADE_STEPS = BRIGHTNESS  # number of steps (0 → BRIGHTNESS)
 # ------------------------------
 
 def load_images(folder, target_size):
@@ -25,7 +26,6 @@ def load_images(folder, target_size):
     for p in sorted(paths):
         try:
             img = Image.open(p).convert("RGB")
-            # Scale to fit, keep aspect, then center on canvas if needed
             img.thumbnail(target_size, Image.LANCZOS)
             canvas = Image.new("RGB", target_size, (0, 0, 0))
             x = (target_size[0] - img.width) // 2
@@ -34,24 +34,16 @@ def load_images(folder, target_size):
             imgs.append((p, canvas))
         except Exception as e:
             print(f"Skipping {p}: {e}")
-    if not imgs:
-        sys.exit("No valid images after loading")
     return imgs
 
-def fade_out(matrix, img, steps=FADE_STEPS, delay=FADE_DELAY):
-    enhancer = ImageEnhance.Brightness(img)
-    for i in range(steps, -1, -1):
-        alpha = i / float(steps)
-        frame = enhancer.enhance(alpha)
-        matrix.SetImage(frame)
+def fade_out(matrix, steps=FADE_STEPS, delay=FADE_DELAY):
+    for b in range(steps, -1, -1):
+        matrix.brightness = b
         time.sleep(delay)
 
-def fade_in(matrix, img, steps=FADE_STEPS, delay=FADE_DELAY):
-    enhancer = ImageEnhance.Brightness(img)
-    for i in range(0, steps + 1):
-        alpha = i / float(steps)
-        frame = enhancer.enhance(alpha)
-        matrix.SetImage(frame)
+def fade_in(matrix, steps=FADE_STEPS, delay=FADE_DELAY):
+    for b in range(0, steps + 1):
+        matrix.brightness = b
         time.sleep(delay)
 
 # ----- Matrix config -----
@@ -61,37 +53,34 @@ options.cols = 64
 options.chain_length = 1
 options.parallel = 1
 options.hardware_mapping = 'regular'
-options.brightness = 75
+options.brightness = BRIGHTNESS
 matrix = RGBMatrix(options=options)
 
-# Preload & prepare images
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
 
 try:
     print("Press CTRL-C to stop.")
-    # Start by fading in the first image from black
     idx = 0
-    path, current_img = images[idx]
+    path, img = images[idx]
     print(f"Displaying {path}")
-    fade_in(matrix, current_img)
+    matrix.SetImage(img)
+    fade_in(matrix)  # fade up the first image
     start = time.time()
 
     while True:
-        # Hold the current image
+        # Hold
         while time.time() - start < HOLD_SECONDS:
             time.sleep(0.05)
 
-        # Next image index
+        # Next image
         idx = (idx + 1) % len(images)
         next_path, next_img = images[idx]
 
-        # Fade out current, fade in next
-        fade_out(matrix, current_img)
+        fade_out(matrix)            # fade current out
         print(f"Displaying {next_path}")
-        fade_in(matrix, next_img)
+        matrix.SetImage(next_img)   # swap while dark
+        fade_in(matrix)             # fade next in
 
-        # Advance
-        current_img = next_img
         start = time.time()
 
 except KeyboardInterrupt:
