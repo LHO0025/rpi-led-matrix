@@ -1,41 +1,42 @@
-#!/usr/bin/env python
-import time
-import sys
-import os
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
+import time
 from PIL import Image
 
-# Folder containing images
-image_folder = "matrix_images"
-
-# Load all image paths
-if not os.path.isdir(image_folder):
-    sys.exit(f"Folder '{image_folder}' not found")
-
-image_files = [os.path.join(image_folder, f) for f in os.listdir(image_folder)
-               if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
-
-if not image_files:
-    sys.exit("No image files found in folder")
-
-# Configuration for the matrix
+# Setup matrix
 options = RGBMatrixOptions()
-options.rows = 64
+options.rows = 32
 options.cols = 64
 options.chain_length = 1
 options.parallel = 1
 options.hardware_mapping = 'regular'
+options.brightness = 80  # initial brightness (max 80)
 
 matrix = RGBMatrix(options=options)
 
-try:
-    print("Press CTRL-C to stop.")
-    while True:
-        for image_file in image_files:
-            print(f"Displaying {image_file}")
-            image = Image.open(image_file)
-            image.thumbnail((matrix.width, matrix.height), Image.LANCZOS)
-            matrix.SetImage(image.convert('RGB'))
-            time.sleep(15)  # show each image for 15 seconds
-except KeyboardInterrupt:
-    sys.exit(0)
+# Load images
+images = [Image.open("image1.png"), Image.open("image2.png")]
+
+def show_image(image):
+    matrix.SetImage(image.convert("RGB"))
+
+def breathe_transition(old_img, new_img, steps=20, delay=0.05, max_brightness=80):
+    # Fade out old image
+    for b in reversed(range(0, max_brightness+1, int(max_brightness/steps))):
+        matrix.brightness = b
+        show_image(old_img)
+        time.sleep(delay)
+
+    # Fade in new image
+    for b in range(0, max_brightness+1, int(max_brightness/steps)):
+        matrix.brightness = b
+        show_image(new_img)
+        time.sleep(delay)
+
+# Example usage
+current = images[0]
+show_image(current)
+time.sleep(2)
+
+next_img = images[1]
+breathe_transition(current, next_img, max_brightness=80)
+current = next_img
