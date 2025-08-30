@@ -8,10 +8,11 @@ from PIL import Image
 IMAGE_FOLDER = "matrix_images"
 HOLD_SECONDS = 5
 
-FADE_STEPS = 40          # increase for longer fades (e.g., 48)
-FADE_FPS   = 30          # lower = longer fades (e.g., 28)
-
-BLACK_PAUSE_S = 0.12     # small dramatic pause at black; set 0.0 to disable
+# Separate timings for OUT and IN so you can exaggerate the “dim then light up” feel
+FADE_OUT_STEPS = 28      # more steps = slower/smoother
+FADE_IN_STEPS  = 32
+FADE_OUT_FPS   = 28      # lower FPS = slower fade
+FADE_IN_FPS    = 32
 
 GAMMA = 2.2
 BRIGHTNESS = 70
@@ -20,6 +21,7 @@ BRIGHTNESS = 70
 def load_images(folder, target_size):
     if not os.path.isdir(folder):
         sys.exit(f"Folder '{folder}' not found")
+
     paths = [os.path.join(folder, f) for f in os.listdir(folder)
              if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
     if not paths:
@@ -44,35 +46,56 @@ def load_images(folder, target_size):
 
 def make_gamma_tables(gamma=GAMMA):
     x = np.arange(256, dtype=np.float32) / 255.0
-    to_gamma  = np.clip((x ** gamma)        * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    to_linear = np.clip((x ** (1.0 / gamma)) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    to_gamma = np.clip((x ** gamma) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    to_linear = np.clip((x ** (1.0/gamma)) * 255.0 + 0.5, 0, 255).astype(np.uint8)
     return to_gamma, to_linear
 
 _TO_GAMMA, _TO_LINEAR = make_gamma_tables(GAMMA)
 
 def scale_perceptual(img_u8, scale01):
-    lin = _TO_LINEAR[img_u8]
+    """
+    Perceptual fade: linearize -> scale -> re-apply gamma.
+    img_u8: HxWx3 uint8 (gamma-ish)
+    scale01: 0..1
+    """
+    lin = _TO_LINEAR[img_u8]                   # linearize
     s = int(scale01 * 256 + 0.5)
-    out = (lin.astype(np.uint16) * s) >> 8
-    return _TO_GAMMA[out.astype(np.uint8)]
+    out = (lin.astype(np.uint16) * s) >> 8     # scale
+    return _TO_GAMMA[out.astype(np.uint8)]     # back to gamma
 
 def blit(matrix, off, frame_u8):
     pil_frame = Image.fromarray(frame_u8, mode="RGB")
     off.SetImage(pil_frame, 0, 0)
     return matrix.SwapOnVSync(off)
 
-def smoothstep(t):
-    # S-curve: slow at start & end, symmetric
-    return t * t * (3.0 - 2.0 * t)
-
-def fade_to_level(matrix, off, img, start_level, end_level, steps=FADE_STEPS, fps=FADE_FPS):
+def fade_out_to_black(matrix, off, img, steps=FADE_OUT_STEPS, fps=FADE_OUT_FPS):
     frame_time = 1.0 / float(fps)
     start = time.perf_counter()
+    # 1.0 -> 0.0
     for i in range(steps + 1):
         t = i / float(steps)
-        s = smoothstep(t)
-        level = start_level + (end_level - start_level) * s  # 0..1
-        frame = scale_perceptual(img, level)
+        # OPTIONAL easing (slower at the start, quicker at end); try t*t or smoothstep
+        a = 1.0 - t*t
+        frame = scale_perceptual(img, max(a, 0.0))
+        off = blit(matrix, off, frame)
+
+        next_time = start + (i + 1) * frame_time
+        remain = next_time - time.perf_counter()
+        if remain > 0:
+            time.sleep(remain)
+    # ensure true black at the end
+    off = blit(matrix, off, np.zeros_like(img, dtype=np.uint8))
+    return off
+
+def fade_in_from_black(matrix, off, img, steps=FADE_IN_STEPS, fps=FADE_IN_FPS):
+    frame_time = 1.0 / float(fps)
+    start = time.perf_counter()
+    # 0.0 -> 1.0
+    for i in range(steps + 1):
+        t = i / float(steps)
+        # OPTIONAL easing (gentle start): use t*t or smoothstep
+        b = t*t
+        frame = scale_perceptual(img, min(max(b, 0.0), 1.0))
         off = blit(matrix, off, frame)
 
         next_time = start + (i + 1) * frame_time
@@ -80,15 +103,6 @@ def fade_to_level(matrix, off, img, start_level, end_level, steps=FADE_STEPS, fp
         if remain > 0:
             time.sleep(remain)
     return off
-
-def fade_out_to_black(matrix, off, img):
-    off = fade_to_level(matrix, off, img, start_level=1.0, end_level=0.0)
-    # Ensure true black
-    off = blit(matrix, off, np.zeros_like(img, dtype=np.uint8))
-    return off
-
-def fade_in_from_black(matrix, off, img):
-    return fade_to_level(matrix, off, img, start_level=0.0, end_level=1.0)
 
 def show_still(matrix, off, img, seconds):
     end = time.perf_counter() + seconds
@@ -108,13 +122,14 @@ options.chain_length = 1
 options.parallel = 1
 options.hardware_mapping = 'regular'
 options.brightness = BRIGHTNESS
-options.gpio_slowdown = 3
+options.gpio_slowdown = 3     # Zero 2 W often likes 3; try 2–4 if needed
 # options.pwm_bits = 9
 # options.limit_refresh_rate_hz = 100
 
 matrix = RGBMatrix(options=options)
 offscreen = matrix.CreateFrameCanvas()
 
+# Preload & prepare images
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
 
 try:
@@ -123,6 +138,7 @@ try:
     path, current_img = images[idx]
     print(f"Displaying {path}")
 
+    # Fade in first image from black (nice intro)
     offscreen = fade_in_from_black(matrix, offscreen, current_img)
 
     while True:
@@ -132,9 +148,8 @@ try:
         next_path, next_img = images[idx]
         print(f"Transition to {next_path}")
 
+        # NEW transition style: dim to black, then light up the new one
         offscreen = fade_out_to_black(matrix, offscreen, current_img)
-        if BLACK_PAUSE_S > 0:
-            time.sleep(BLACK_PAUSE_S)
         offscreen = fade_in_from_black(matrix, offscreen, next_img)
 
         current_img = next_img
