@@ -6,7 +6,7 @@ from PIL import Image
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
-HOLD_SECONDS = 12
+HOLD_SECONDS = 5
 
 # Separate timings for OUT and IN so you can exaggerate the “dim then light up” feel
 FADE_OUT_STEPS = 28      # more steps = slower/smoother
