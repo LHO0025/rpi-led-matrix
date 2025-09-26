@@ -6,7 +6,7 @@ from PIL import Image
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
-HOLD_SECONDS = 5
+HOLD_SECONDS = 30
 
 FADE_STEPS = 40          # increase for longer fades (e.g., 48)
 FADE_FPS   = 30          # lower = longer fades (e.g., 28)
@@ -14,8 +14,22 @@ FADE_FPS   = 30          # lower = longer fades (e.g., 28)
 BLACK_PAUSE_S = 0.05     # small dramatic pause at black; set 0.0 to disable
 
 GAMMA = 2.2
-BRIGHTNESS = 90
+BRIGHTNESS = 80
 # -----------------------------
+
+import time
+
+def boot_time_seconds():
+    with open("/proc/uptime", "r") as f:
+        return float(f.readline().split()[0])
+
+def log_boot_time(path="/tmp/myscript_bootlog.txt"):
+    t = boot_time_seconds()
+    with open(path, "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  boot+{t:.3f}s\n")
+
+# Call this as the very first line of your script
+log_boot_time()
 
 def load_images(folder, target_size):
     if not os.path.isdir(folder):
