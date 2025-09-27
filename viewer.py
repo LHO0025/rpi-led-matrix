@@ -15,7 +15,7 @@ FADE_FPS   = 30          # lower = longer fades (e.g., 28)
 BLACK_PAUSE_S = 0.05     # small dramatic pause at black; set 0.0 to disable
 
 GAMMA = 2.2
-BRIGHTNESS = 75
+BRIGHTNESS = 80
 # -----------------------------
 
 def load_images(folder, target_size):
