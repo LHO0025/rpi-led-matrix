@@ -3,6 +3,7 @@ import time, sys, os
 import numpy as np
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from PIL import Image
+import random
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
@@ -40,7 +41,7 @@ def load_images(folder, target_size):
             print(f"Skipping {p}: {e}")
     if not imgs:
         sys.exit("No valid images after loading")
-    return imgs
+    return random.shuffle(imgs)
 
 def make_gamma_tables(gamma=GAMMA):
     x = np.arange(256, dtype=np.float32) / 255.0
