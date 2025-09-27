@@ -91,7 +91,9 @@ def fade_in_from_black(matrix, off, img):
     return fade_to_level(matrix, off, img, start_level=0.0, end_level=1.0)
 
 def show_still(matrix, off, img, seconds):
-    matrix.SetImage(img.convert('RGB'))
+    pil_frame = Image.fromarray(img, mode="RGB")
+    off.SetImage(pil_frame, 0, 0)
+    off = matrix.SwapOnVSync(off)
     time.sleep(seconds)
     return off
 
