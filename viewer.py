@@ -91,14 +91,9 @@ def fade_in_from_black(matrix, off, img):
     return fade_to_level(matrix, off, img, start_level=0.0, end_level=1.0)
 
 def show_still(matrix, off, img, seconds):
-    end = time.perf_counter() + seconds
-    pil = Image.fromarray(img, mode="RGB")
-    while True:
-        off.SetImage(pil, 0, 0)
-        off = matrix.SwapOnVSync(off)
-        if time.perf_counter() >= end:
-            return off
-        time.sleep(0.02)
+    matrix.SetImage(img.convert('RGB'))
+    time.sleep(seconds)
+    return off
 
 # ----- Matrix config -----
 options = RGBMatrixOptions()
@@ -121,7 +116,6 @@ try:
     print("Press CTRL-C to stop.")
     idx = 0
     path, current_img = images[idx]
-    print(f"Displaying {path}")
 
     offscreen = fade_in_from_black(matrix, offscreen, current_img)
 
@@ -130,7 +124,6 @@ try:
 
         idx = (idx + 1) % len(images)
         next_path, next_img = images[idx]
-        print(f"Transition to {next_path}")
 
         offscreen = fade_out_to_black(matrix, offscreen, current_img)
         if BLACK_PAUSE_S > 0:
