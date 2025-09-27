@@ -107,7 +107,10 @@ options.chain_length = 1
 options.parallel = 1
 options.hardware_mapping = 'regular'
 options.brightness = BRIGHTNESS
-options.gpio_slowdown = 1
+
+options.pwm_bits = 8            
+options.pwm_lsb_nanoseconds = 130 
+options.gpio_slowdown = 2 
 # options.pwm_bits = 9
 # options.limit_refresh_rate_hz = 100
 
