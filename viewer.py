@@ -41,7 +41,8 @@ def load_images(folder, target_size):
             print(f"Skipping {p}: {e}")
     if not imgs:
         sys.exit("No valid images after loading")
-    return random.shuffle(imgs)
+    random.shuffle(imgs)
+    return imgs
 
 def make_gamma_tables(gamma=GAMMA):
     x = np.arange(256, dtype=np.float32) / 255.0
