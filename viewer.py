@@ -14,24 +14,8 @@ FADE_FPS   = 30          # lower = longer fades (e.g., 28)
 BLACK_PAUSE_S = 0.05     # small dramatic pause at black; set 0.0 to disable
 
 GAMMA = 2.2
-BRIGHTNESS = 80
+BRIGHTNESS = 75
 # -----------------------------
-
-def log_boot_time():
-    # time since boot (seconds)
-    with open("/proc/uptime", "r") as f:
-        since_boot = float(f.readline().split()[0])
-
-    # resolve working directory (cwd of the process)
-    cwd = os.getcwd()
-    log_path = os.path.join(cwd, "boot_time.log")
-
-    # append a line with timestamp + uptime
-    with open(log_path, "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  boot+{since_boot:.3f}s\n")
-
-# call this at the very top of your script
-log_boot_time()
 
 def load_images(folder, target_size):
     if not os.path.isdir(folder):
@@ -124,7 +108,7 @@ options.chain_length = 1
 options.parallel = 1
 options.hardware_mapping = 'regular'
 options.brightness = BRIGHTNESS
-options.gpio_slowdown = 3
+options.gpio_slowdown = 1
 # options.pwm_bits = 9
 # options.limit_refresh_rate_hz = 100
 
