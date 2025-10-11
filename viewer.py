@@ -197,4 +197,5 @@ except KeyboardInterrupt:
     pass
 finally:
     matrix.Clear()
+    print("Exiting...")
     sys.exit(0)
