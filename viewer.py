@@ -172,7 +172,6 @@ prev_running = False
 try:
     print("Press CTRL-C to stop.")
 
-    offscreen = fade_in_from_black(matrix, offscreen, current_img)
 
     while True:
         now_running = getIsRunning()
