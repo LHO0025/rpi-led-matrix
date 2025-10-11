@@ -145,12 +145,16 @@ options.gpio_slowdown = 2
 matrix = RGBMatrix(options=options)
 offscreen = matrix.CreateFrameCanvas()
 
+idx = 0
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
+path, current_img = images[idx]
+
 
 def handle_off(event, value):
     with lock:
         global isRunning
         isRunning = False
+    fade_out_to_black(matrix, offscreen, current_img)
     matrix.Clear()
     print("Turning off display")
 
@@ -167,8 +171,6 @@ def getIsRunning():
 
 try:
     print("Press CTRL-C to stop.")
-    idx = 0
-    path, current_img = images[idx]
 
     offscreen = fade_in_from_black(matrix, offscreen, current_img)
 
