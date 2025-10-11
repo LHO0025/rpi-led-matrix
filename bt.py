@@ -78,6 +78,7 @@ def write_callback(value, options):
     string_value = value.decode('utf-8')
     print('Write callback called. New value is {}'.format(string_value))
     if string_value == "off":
+        print("Turning off LED")
         led_off()
     elif string_value == "on":
         led_on()
