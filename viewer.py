@@ -29,19 +29,6 @@ threading.Thread(target=control_thread, daemon=True).start()
 
 print("Starting viewer...")
 
-def handle_off(event, value):
-    with lock:
-        global isRunning
-        isRunning = False
-    print("Turning off display")
-
-def handle_on(event, value):
-    with lock:
-        global isRunning
-        isRunning = True
-    print("Turning on display")
-
-
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
@@ -134,7 +121,10 @@ def show_still(matrix, off, img, seconds):
     pil_frame = Image.fromarray(img, mode="RGB")
     off.SetImage(pil_frame, 0, 0)
     off = matrix.SwapOnVSync(off)
-    time.sleep(seconds)
+    for _ in range(int(seconds * 10)):
+        if not getIsRunning():
+            break
+        time.sleep(0.1)
     return off
 
 # ----- Matrix config -----
@@ -157,6 +147,19 @@ offscreen = matrix.CreateFrameCanvas()
 
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
 
+def handle_off(event, value):
+    with lock:
+        global isRunning
+        isRunning = False
+    matrix.Clear()
+    print("Turning off display")
+
+def handle_on(event, value):
+    with lock:
+        global isRunning
+        isRunning = True
+    print("Turning on display")
+
 def getIsRunning():
     global isRunning
     with lock:
@@ -173,6 +176,7 @@ try:
         _isRunning = getIsRunning()
         if _isRunning:
             offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
+            
             idx = (idx + 1) % len(images)
             next_path, next_img = images[idx]
 
