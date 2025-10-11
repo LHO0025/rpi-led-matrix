@@ -27,7 +27,7 @@ def control_thread():
 threading.Thread(target=control_thread, daemon=True).start()
 
 
-print("REEEEEEE")
+print("Starting viewer...")
 
 def handle_off(event, value):
     print("Turning off display")
