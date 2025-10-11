@@ -7,7 +7,7 @@ import random
 from bluezero import async_tools
 from bluezero import adapter
 from bluezero import peripheral
-
+import socket
 # constants
 # Custom service uuid
 CPU_TMP_SRVC = '12341000-1234-1234-1234-123456789abc'
@@ -17,6 +17,19 @@ CPU_TMP_CHRC = '2A6E'
 # Bluetooth SIG adopted UUID for Characteristic Presentation Format
 CPU_FMT_DSCP = '2904'
 
+
+
+def send_ctl(cmd: bytes):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    s.connect("/tmp/ledctl.sock")
+    s.send(cmd)
+    s.close()
+
+def led_off(): send_ctl(b"off")
+def led_on():  send_ctl(b"on")
+
+
+print("Starting in off state")
 
 def read_value():
     """

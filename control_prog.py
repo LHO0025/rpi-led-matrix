@@ -7,7 +7,4 @@ def send_ctl(cmd: bytes):
 
 def led_off(): send_ctl(b"off")
 def led_on():  send_ctl(b"on")
-
-
-
 led_off()
