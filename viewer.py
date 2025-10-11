@@ -123,7 +123,7 @@ def show_still(matrix, off, img, seconds):
     off = matrix.SwapOnVSync(off)
     for _ in range(int(seconds * 10)):
         if not getIsRunning():
-            return None
+            break
         time.sleep(0.1)
     return off
 
@@ -154,8 +154,6 @@ def handle_off(event, value):
     with lock:
         global isRunning
         isRunning = False
-    fade_out_to_black(matrix, offscreen, current_img)
-    matrix.Clear()
     print("Turning off display")
 
 def handle_on(event, value):
@@ -168,6 +166,8 @@ def getIsRunning():
     global isRunning
     with lock:
         return isRunning
+    
+prev_running = False
 
 try:
     print("Press CTRL-C to stop.")
@@ -175,21 +175,30 @@ try:
     offscreen = fade_in_from_black(matrix, offscreen, current_img)
 
     while True:
-        _isRunning = getIsRunning()
-        if _isRunning:
-            offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
-            
-            if offscreen is None:
-                continue
-            
-            idx = (idx + 1) % len(images)
-            next_path, next_img = images[idx]
+        now_running = getIsRunning()
 
+        # OFF transition
+        if prev_running and not now_running:
             offscreen = fade_out_to_black(matrix, offscreen, current_img)
-            if BLACK_PAUSE_S > 0:
-                time.sleep(BLACK_PAUSE_S)
-            offscreen = fade_in_from_black(matrix, offscreen, next_img)
-            current_img = next_img
+            matrix.Clear()
+
+        # ON transition
+        if not prev_running and now_running:
+            offscreen = fade_in_from_black(matrix, offscreen, current_img)
+
+        prev_running = now_running
+
+        if now_running:
+            offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
+            # advance only if still on
+            if getIsRunning():
+                idx = (idx + 1) % len(images)
+                next_path, next_img = images[idx]
+                offscreen = fade_out_to_black(matrix, offscreen, current_img)
+                if BLACK_PAUSE_S > 0:
+                    time.sleep(BLACK_PAUSE_S)
+                offscreen = fade_in_from_black(matrix, offscreen, next_img)
+                current_img = next_img
         else:
             time.sleep(0.2)
 
