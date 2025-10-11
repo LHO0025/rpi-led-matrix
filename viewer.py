@@ -4,6 +4,36 @@ import numpy as np
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from PIL import Image
 import random
+import os, socket, threading
+
+
+
+
+CTRL_SOCK = "/tmp/ledctl.sock"
+try: os.unlink(CTRL_SOCK)
+except FileNotFoundError: pass
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+sock.bind(CTRL_SOCK)
+
+def control_thread():
+    while True:
+        msg, _ = sock.recvfrom(16)
+        if msg == b"off":
+            handle_off(None, None)
+        elif msg == b"on":
+            handle_on(None, None)
+
+threading.Thread(target=control_thread, daemon=True).start()
+
+
+def handle_off(event, value):
+    print("Turning off display")
+
+def handle_on(event, value):
+    print("Turning on display")
+
+
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
