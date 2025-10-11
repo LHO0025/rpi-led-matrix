@@ -65,8 +65,8 @@ def notify_callback(notifying, characteristic):
 
 
 def write_callback(value, options):
-    int_value = int.from_bytes(value, byteorder='little', signed=True)
-    print('Write callback called. New value is {}'.format(int_value))
+    string_value = value.decode('utf-8')
+    print('Write callback called. New value is {}'.format(string_value))
 
 def main(adapter_address):
     """Creation of peripheral"""
