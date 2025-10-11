@@ -28,9 +28,6 @@ def send_ctl(cmd: bytes):
 def led_off(): send_ctl(b"off")
 def led_on():  send_ctl(b"on")
 
-
-print("Starting in off state")
-
 def read_value():
     """
     Example read callback. Value returned needs to a list of bytes/integers
@@ -80,6 +77,10 @@ def notify_callback(notifying, characteristic):
 def write_callback(value, options):
     string_value = value.decode('utf-8')
     print('Write callback called. New value is {}'.format(string_value))
+    if string_value == "off":
+        led_off()
+    elif string_value == "on":
+        led_on()
 
 def main(adapter_address):
     """Creation of peripheral"""
