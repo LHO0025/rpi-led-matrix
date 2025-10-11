@@ -7,8 +7,8 @@ import random
 import os, socket, threading
 
 
-
-
+isRunning = True
+lock = threading.Lock()
 CTRL_SOCK = "/tmp/ledctl.sock"
 try: os.unlink(CTRL_SOCK)
 except FileNotFoundError: pass
@@ -30,9 +30,15 @@ threading.Thread(target=control_thread, daemon=True).start()
 print("Starting viewer...")
 
 def handle_off(event, value):
+    with lock:
+        global isRunning
+        isRunning = False
     print("Turning off display")
 
 def handle_on(event, value):
+    with lock:
+        global isRunning
+        isRunning = True
     print("Turning on display")
 
 
@@ -151,6 +157,11 @@ offscreen = matrix.CreateFrameCanvas()
 
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
 
+def getIsRunning():
+    global isRunning
+    with lock:
+        return isRunning
+
 try:
     print("Press CTRL-C to stop.")
     idx = 0
@@ -159,17 +170,19 @@ try:
     offscreen = fade_in_from_black(matrix, offscreen, current_img)
 
     while True:
-        offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
+        _isRunning = getIsRunning()
+        if _isRunning:
+            offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
+            idx = (idx + 1) % len(images)
+            next_path, next_img = images[idx]
 
-        idx = (idx + 1) % len(images)
-        next_path, next_img = images[idx]
-
-        offscreen = fade_out_to_black(matrix, offscreen, current_img)
-        if BLACK_PAUSE_S > 0:
-            time.sleep(BLACK_PAUSE_S)
-        offscreen = fade_in_from_black(matrix, offscreen, next_img)
-
-        current_img = next_img
+            offscreen = fade_out_to_black(matrix, offscreen, current_img)
+            if BLACK_PAUSE_S > 0:
+                time.sleep(BLACK_PAUSE_S)
+            offscreen = fade_in_from_black(matrix, offscreen, next_img)
+            current_img = next_img
+        else:
+            time.sleep(0.2)
 
 except KeyboardInterrupt:
     pass
