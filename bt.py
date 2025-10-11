@@ -1,32 +1,26 @@
 from bluezero import peripheral
 
-# Action to perform when a BLE client writes a value
-def on_write(value):
-    print("Received value:", value)
+# Called when the client writes a value
+def on_write(value, options):
+    print("Received:", value)
     if value == b'1':
-        print("Turning LED ON")
-        # Here you can perform an action (e.g., GPIO output)
+        print("Action: Turn ON")
     elif value == b'0':
-        print("Turning LED OFF")
+        print("Action: Turn OFF")
 
-# Define a simple characteristic
-my_service_uuid = '12345678-1234-5678-1234-56789abcdef0'
-my_char_uuid = '12345678-1234-5678-1234-56789abcdef1'
+# GATT service/characteristic definition
+led_service = {
+    'uuid': '12345678-1234-5678-1234-56789abcdef0',
+    'characteristics': [{
+        'uuid': '12345678-1234-5678-1234-56789abcdef1',
+        'flags': ['write'],
+        'write': on_write
+    }]
+}
 
-my_service = peripheral.Service(my_service_uuid)
-my_char = peripheral.Characteristic(
-    my_char_uuid,
-    ['write'],             # allows remote app to write
-    value=None,
-    write_callback=on_write
-)
+# Create a Peripheral (advertises a GATT service)
+device = peripheral.Peripheral(adapter_addr=None, local_name='PiBLE')
+device.add_service(led_service)
 
-# Add characteristic to the service
-my_service.add_characteristic(my_char)
-
-# Create and advertise the peripheral
-my_device = peripheral.Peripheral([my_service],
-                                  local_name='PiBLE')
-
-print("Starting GATT server... (visible as 'PiBLE')")
-my_device.run()
+print("Starting BLE GATT server as 'PiBLE'...")
+device.run()
