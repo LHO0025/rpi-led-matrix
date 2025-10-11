@@ -123,7 +123,7 @@ def show_still(matrix, off, img, seconds):
     off = matrix.SwapOnVSync(off)
     for _ in range(int(seconds * 10)):
         if not getIsRunning():
-            break
+            return None
         time.sleep(0.1)
     return off
 
@@ -176,6 +176,9 @@ try:
         _isRunning = getIsRunning()
         if _isRunning:
             offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
+            
+            if offscreen is None:
+                continue
             
             idx = (idx + 1) % len(images)
             next_path, next_img = images[idx]
