@@ -13,7 +13,6 @@ export const SERVER_URL = "http://192.168.88.141:5000"
 
 function App() {
   const [images, setImages] = useState([]);
-
   const [toBeDeleted, setToBeDeleted] = useState([]);
 
   useEffect(() => {
@@ -87,17 +86,11 @@ function App() {
       body: JSON.stringify({ brightness: brightness }),
     })
       .then((res) => res.json())
-      .then((data) => {
-        console.log("Upload response:", data);
-        setImages((prevImages) => [...prevImages, data.filename]);
-
-      })
       .catch((err) => console.error("Error uploading image:", err));
   }
 
   return (
     <>
-
       <div className="p-4 overflow-y-auto">
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1 max-h-[75vh] overflow-y-scroll">
           {images.length > 0 ? (

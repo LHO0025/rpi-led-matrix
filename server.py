@@ -3,20 +3,40 @@ import os
 from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
 import socket
+import configparser
 
 app = Flask(__name__)
 cors = CORS(app) # allow CORS for all domains on all routes.
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 IMAGE_FOLDER = os.path.join(os.getcwd(), "matrix_images")
-
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+CONFIG_FILE = "config.ini"
 
 def send_ctl(cmd: bytes):
     s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     s.connect("/tmp/ledctl.sock")
     s.send(cmd)
     s.close()
+    
+    
+def save_config(brightness=None, hold_seconds=None):
+    config = configparser.ConfigParser()
+
+    if os.path.isfile(CONFIG_FILE):
+        config.read(CONFIG_FILE)
+
+    if "display" not in config:
+        config["display"] = {}
+
+    if brightness is not None:
+        config["display"]["brightness"] = str(brightness)
+
+    if hold_seconds is not None:
+        config["display"]["hold_seconds"] = str(hold_seconds)
+
+    with open(CONFIG_FILE, "w") as f:
+        config.write(f)
 
 @app.route("/images", methods=["GET"])
 @cross_origin()
@@ -126,8 +146,19 @@ def set_brightness():
         return jsonify({'error': 'Brightness must be an integer'}), 400
 
     send_ctl(f"brightness:{brightness}".encode())
-
+    save_config(brightness=brightness)
+    
     return jsonify({'message': f'Brightness set to {brightness}'}), 200
+
+@app.route("/turn_on", methods=["POST", "GET"])
+def turn_on():
+    send_ctl("on".encode())
+    return jsonify({"status": "success", "action": "on"}), 200
+
+@app.route("/turn_off", methods=["POST", "GET"])
+def turn_off():
+    send_ctl("off".encode())
+    return jsonify({"status": "success", "action": "off"}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

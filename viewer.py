@@ -5,6 +5,47 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from PIL import Image
 import random
 import os, socket, threading
+import configparser
+
+CONFIG_FILE = "config.ini"
+
+def load_config():
+    brightness = BRIGHTNESS  # defaults from script
+    hold_seconds = HOLD_SECONDS
+    config = configparser.ConfigParser()
+    if not os.path.isfile(CONFIG_FILE):
+        print(f"Config file '{CONFIG_FILE}' not found. Using defaults.")
+        return brightness, hold_seconds
+
+    try:
+        config.read(CONFIG_FILE)
+        if "display" in config:
+            if "brightness" in config["display"]:
+                try:
+                    b = int(config["display"]["brightness"])
+                    if 1 <= b <= 100:
+                        brightness = b
+                    else:
+                        print(f"Brightness in config out of range (1–100), using default {brightness}")
+                except ValueError:
+                    print(f"Invalid brightness in config, using default {brightness}")
+
+            if "hold_seconds" in config["display"]:
+                try:
+                    s = int(config["display"]["hold_seconds"])
+                    if s > 0:
+                        hold_seconds = s
+                    else:
+                        print(f"hold_seconds must be > 0, using default {hold_seconds}")
+                except ValueError:
+                    print(f"Invalid hold_seconds in config, using default {hold_seconds}")
+
+    except Exception as e:
+        print(f"Error reading config file: {e}. Using defaults.")
+
+    return brightness, hold_seconds
+
+
 
 
 isRunning = True
@@ -45,7 +86,7 @@ print("Starting viewer...")
 
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
-HOLD_SECONDS = 30
+BRIGHTNESS, HOLD_SECONDS = load_config()
 
 FADE_STEPS = 40          # increase for longer fades (e.g., 48)
 FADE_FPS   = 30          # lower = longer fades (e.g., 28)
@@ -53,7 +94,7 @@ FADE_FPS   = 30          # lower = longer fades (e.g., 28)
 BLACK_PAUSE_S = 0.05     # small dramatic pause at black; set 0.0 to disable
 
 GAMMA = 2.2
-BRIGHTNESS = 80
+
 # -----------------------------
 
 def load_images(folder, target_size):
@@ -212,7 +253,6 @@ prev_running = False
 
 try:
     print("Press CTRL-C to stop.")
-
 
     while True:
         now_running = getIsRunning()
