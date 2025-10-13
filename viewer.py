@@ -10,8 +10,8 @@ import configparser
 CONFIG_FILE = "config.ini"
 
 def load_config():
-    brightness = BRIGHTNESS  # defaults from script
-    hold_seconds = HOLD_SECONDS
+    brightness = 75  # defaults from script
+    hold_seconds = 30
     config = configparser.ConfigParser()
     if not os.path.isfile(CONFIG_FILE):
         print(f"Config file '{CONFIG_FILE}' not found. Using defaults.")
