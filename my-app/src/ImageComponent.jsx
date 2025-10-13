@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Checkbox } from "./components/ui/checkbox";
 import { cn } from "./lib/utils";
+import { SERVER_URL } from "./App";
 
 const Image = ({ url, idx, toBeDeleted, setToBeDeleted }) => {
     const [isChecked, setIsChecked] = useState(false);
@@ -34,7 +35,7 @@ const Image = ({ url, idx, toBeDeleted, setToBeDeleted }) => {
                 />
             }
             <img
-                src={`http://192.168.88.178:5000/images/${url}`}
+                src={`${SERVER_URL}/images/${url}`}
                 alt={`image-${idx}`}
                 className="w-full object-cover aspect-square "
                 loading="lazy"

@@ -19,9 +19,10 @@ sock.bind(CTRL_SOCK)
 def control_thread():
     while True:
         msg, _ = sock.recvfrom(16)
-        if msg == b"off":
+        msg = msg.decode("utf-8") 
+        if msg == "off":
             handle_off(None, None)
-        elif msg == b"on":
+        elif msg == "on":
             handle_on(None, None)
         elif msg.startswith("brightness:"):
             try:

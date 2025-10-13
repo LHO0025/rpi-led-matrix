@@ -9,13 +9,15 @@ import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { Slider } from './components/ui/slider';
 
+export const SERVER_URL = "http://192.168.88.141:5000"
+
 function App() {
   const [images, setImages] = useState([]);
 
   const [toBeDeleted, setToBeDeleted] = useState([]);
 
   useEffect(() => {
-    fetch("http://192.168.88.178:5000/images") // change if Flask runs elsewhere
+    fetch(`${SERVER_URL}/images`) // change if Flask runs elsewhere
       .then((res) => res.json())
       .then((data) => {
         setImages(data.images || []);
@@ -77,7 +79,7 @@ function App() {
   }
 
   function handleUpdateBrightness(brightness) {
-    fetch("http://192.168.88.178:5000/set_brightness", {
+    fetch(`${SERVER_URL}/set_brightness`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
