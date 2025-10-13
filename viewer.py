@@ -23,6 +23,18 @@ def control_thread():
             handle_off(None, None)
         elif msg == b"on":
             handle_on(None, None)
+        elif msg.startswith("brightness:"):
+            try:
+                value = int(msg.split(":")[1])
+                if 1 <= value <= 100:
+                    try_update_brightness(value)
+                else:
+                    print(f"Invalid brightness value: {value} (must be 1–100)")
+            except ValueError:
+                print(f"Invalid brightness format: {msg}")
+        else:
+            print(f"Unknown command: {msg}")
+            
 
 threading.Thread(target=control_thread, daemon=True).start()
 
@@ -166,6 +178,29 @@ def getIsRunning():
     global isRunning
     with lock:
         return isRunning
+    
+last_brightness_update = 0
+BRIGHTNESS_RATE_LIMIT_S = 0.2  # 200 ms
+
+def handle_set_brightness(value):
+    if 1 <= value <= 100:
+        matrix.brightness = value
+        print(f"Set brightness to {value}")
+    else:
+        print(f"Invalid brightness value: {value} (must be 1–100)")
+
+def try_update_brightness(value):
+    global last_brightness_update
+    now = time.monotonic()
+
+    # enforce 200ms cooldown
+    if now - last_brightness_update >= BRIGHTNESS_RATE_LIMIT_S:
+        handle_set_brightness(value)
+        last_brightness_update = now
+    else:
+        # optional: silently ignore or print
+        print("Brightness update skipped (rate-limited)")
+
     
 prev_running = False
 
