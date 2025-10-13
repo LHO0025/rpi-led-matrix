@@ -89,6 +89,18 @@ function App() {
       .catch((err) => console.error("Error uploading image:", err));
   }
 
+  function handleTurnOn() {
+    fetch(`${SERVER_URL}/turn_on`, { method: "POST" })
+      .then((res) => res.json())
+      .catch((err) => console.error("Error turning on:", err));
+  }
+
+  function handleTurnOff() {
+    fetch(`${SERVER_URL}/turn_off`, { method: "POST" })
+      .then((res) => res.json())
+      .catch((err) => console.error("Error turning off:", err));
+  }
+
   return (
     <>
       <div className="p-4 overflow-y-auto">
@@ -105,7 +117,14 @@ function App() {
 
       <Button className='ml-4' disabled={toBeDeleted.length === 0}><Trash2 />Delete images</Button>
 
+
+
       <div className='flex flex-col gap-5 p-4 mt-2'>
+        <div className='flex gap-3'>
+          <Button onClick={handleTurnOn}>Turn on</Button>
+          <Button onClick={handleTurnOff}>Turn off</Button>
+        </div>
+
         <div className="grid w-full items-center gap-3">
           <Label>Upload new image</Label>
           <div className="flex w-full items-center gap-2">
