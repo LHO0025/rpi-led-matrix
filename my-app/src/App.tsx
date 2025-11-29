@@ -26,7 +26,7 @@ function App() {
   }, []);
 
   const handleDelete = () => {
-    const response = fetch("http://192.168.88.178:5000/delete_image", {
+    const response = fetch(`${SERVER_URL}/delete_image`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
@@ -43,8 +43,6 @@ function App() {
       .catch((err) => console.error("Error deleting image:", err));
   };
 
-
-
   const fileInputRef = useRef(null);
   const [isImageSelected, setIsImageSelected] = useState(false);
   function handleUpload() {
@@ -54,7 +52,7 @@ function App() {
     const formData = new FormData();
     formData.append("image", file);
 
-    fetch("http://192.168.88.178:5000/upload_image", {
+    fetch(`${SERVER_URL}/upload_image`, {
       method: "POST",
       body: formData,
     })
@@ -115,7 +113,7 @@ function App() {
         </div>
       </div>
 
-      <Button className='ml-4' disabled={toBeDeleted.length === 0}><Trash2 />Delete images</Button>
+      <Button className='ml-4' disabled={toBeDeleted.length === 0} onClick={handleDelete}><Trash2 />Delete images</Button>
 
 
 
@@ -129,12 +127,11 @@ function App() {
           <Label>Upload new image</Label>
           <div className="flex w-full items-center gap-2">
             <Input ref={fileInputRef} onChange={handleSelectedImage} type="file" accept="image/*" />
-            <Button disabled={!isImageSelected} type="submit" variant="outline">
+            <Button disabled={!isImageSelected} type="submit" variant="outline" onClick={handleUpload}>
               Upload
             </Button>
           </div>
         </div>
-
 
         <div className="grid w-full items-center gap-3">
           <Label>Brightness</Label>
