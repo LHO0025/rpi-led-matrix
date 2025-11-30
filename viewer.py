@@ -45,9 +45,6 @@ def load_config():
 
     return brightness, hold_seconds
 
-
-
-
 isRunning = True
 lock = threading.Lock()
 CTRL_SOCK = "/tmp/ledctl.sock"
@@ -207,7 +204,6 @@ offscreen = matrix.CreateFrameCanvas()
 idx = 0
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
 path, current_img = images[idx]
-
 
 def handle_off(event, value):
     with lock:
