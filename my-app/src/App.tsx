@@ -50,16 +50,16 @@ function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoginError("")
-    
+
     try {
       const response = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })
       })
-      
+
       const data = await response.json()
-      
+
       if (response.ok) {
         localStorage.setItem('token', data.token)
         setToken(data.token)
@@ -237,7 +237,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   }
 
   function handleTurnOn() {
-    fetch(`${SERVER_URL}/turn_on`, { 
+    fetch(`${SERVER_URL}/turn_on`, {
       method: "POST",
       headers: authHeaders
     })
@@ -246,7 +246,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   }
 
   function handleTurnOff() {
-    fetch(`${SERVER_URL}/turn_off`, { 
+    fetch(`${SERVER_URL}/turn_off`, {
       method: "POST",
       headers: authHeaders
     })
@@ -261,7 +261,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
           <h1 className="text-2xl font-bold text-white">LED Matrix Control</h1>
           <Button onClick={onLogout} variant="outline">Logout</Button>
         </div>
-        
+
         <div className="relative grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1 max-h-[65vh] overflow-y-scroll">
           {
             isDeleteLoading &&
