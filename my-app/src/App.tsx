@@ -230,7 +230,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   // Mark images for deletion
   function toggleDeleteImage(filename: string) {
     if (isReorderMode) return // Don't delete while reordering
-    
+
     if (filename.startsWith('pending:')) {
       removePendingUpload(filename.replace('pending:', ''))
       return
@@ -274,10 +274,10 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   // Touch handlers for mobile reordering
   const handleTouchStart = useCallback((e: React.TouchEvent, index: number) => {
     if (!isReorderMode) return
-    
+
     const touch = e.touches[0]
     touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
-    
+
     longPressTimerRef.current = setTimeout(() => {
       setDraggedIndex(index)
       // Vibrate for feedback if available
@@ -289,7 +289,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!isReorderMode) return
-    
+
     // Cancel long press if moved too much
     if (longPressTimerRef.current && touchStartPosRef.current) {
       const touch = e.touches[0]
@@ -300,9 +300,9 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
         longPressTimerRef.current = null
       }
     }
-    
+
     if (draggedIndex === null) return
-    
+
     // Find element under touch
     const touch = e.touches[0]
     const elements = document.elementsFromPoint(touch.clientX, touch.clientY)
@@ -320,14 +320,14 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
       clearTimeout(longPressTimerRef.current)
       longPressTimerRef.current = null
     }
-    
+
     if (draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex) {
       const newImages = [...images]
       const [draggedItem] = newImages.splice(draggedIndex, 1)
       newImages.splice(dragOverIndex, 0, draggedItem)
       setImages(newImages)
     }
-    
+
     setDraggedIndex(null)
     setDragOverIndex(null)
     touchStartPosRef.current = null
@@ -367,11 +367,11 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
         // Save the new order (excluding pending and deleted)
         const finalOrder = images
           .filter(img => !img.startsWith('pending:') && !toBeDeleted.includes(img))
-        
+
         // Add newly uploaded files to the order
         const uploadedNames = pendingUploads.map(f => f.name)
         const orderToSave = [...finalOrder.filter(img => !uploadedNames.includes(img.replace('pending:', ''))), ...uploadedNames]
-        
+
         await fetch(`${SERVER_URL}/images/order`, {
           method: "POST",
           headers: authHeaders,
@@ -472,8 +472,8 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
         {/* Reorder mode toggle */}
         <div className="mb-3 flex items-center gap-3">
-          <Button 
-            variant={isReorderMode ? "default" : "outline"} 
+          <Button
+            variant={isReorderMode ? "default" : "outline"}
             size="sm"
             onClick={() => setIsReorderMode(!isReorderMode)}
           >
