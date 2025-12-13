@@ -4,8 +4,16 @@ import subprocess
 import logging
 from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import socket
 import configparser
+import jwt
+from datetime import datetime, timedelta
+from functools import wraps
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -19,7 +27,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGE_FOLDER = os.path.join(BASE_DIR, "matrix_images")
 WEB_APP_FOLDER = os.path.join(BASE_DIR, "my-app", "dist")
 CONFIG_FILE = os.path.join(BASE_DIR, "config.ini")
+AUTH_FILE = os.path.join(BASE_DIR, ".auth")
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+# JWT Configuration
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', os.urandom(32).hex())
+JWT_EXPIRATION_HOURS = 24
 
 # Ensure required directories exist
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
@@ -84,6 +97,97 @@ def save_config(brightness=None, hold_seconds=None):
 
 
 # =============================================================================
+# Authentication Functions
+# =============================================================================
+
+def load_password_hash():
+    """Load the password hash from file."""
+    if os.path.exists(AUTH_FILE):
+        try:
+            with open(AUTH_FILE, 'r') as f:
+                return f.read().strip()
+        except Exception as e:
+            logger.error(f"Failed to load password hash: {e}")
+    return None
+
+
+def save_password_hash(password: str):
+    """Save a new password hash."""
+    try:
+        hash_val = generate_password_hash(password)
+        with open(AUTH_FILE, 'w') as f:
+            f.write(hash_val)
+        os.chmod(AUTH_FILE, 0o600)  # Secure file permissions
+        logger.info("Password hash saved successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save password hash: {e}")
+        return False
+
+
+def verify_password(password: str) -> bool:
+    """Verify a password against the stored hash."""
+    hash_val = load_password_hash()
+    if not hash_val:
+        return False
+    return check_password_hash(hash_val, password)
+
+
+def generate_token(username: str = "admin") -> str:
+    """Generate a JWT token."""
+    payload = {
+        'username': username,
+        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
+        'iat': datetime.utcnow()
+    }
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm='HS256')
+
+
+def verify_token(token: str) -> dict:
+    """Verify and decode a JWT token."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
+        return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
+        return None
+    except jwt.InvalidTokenError:
+        logger.warning("Invalid token")
+        return None
+
+
+def token_required(f):
+    """Decorator to require valid JWT token for routes."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        
+        # Check for token in Authorization header
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(' ')[1]  # Bearer <token>
+            except IndexError:
+                return jsonify({'error': 'Invalid token format'}), 401
+        
+        if not token:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        payload = verify_token(token)
+        if not payload:
+            return jsonify({'error': 'Invalid or expired token'}), 401
+        
+        return f(*args, **kwargs)
+    
+    return decorated
+
+
+def is_password_set() -> bool:
+    """Check if a password has been set."""
+    return load_password_hash() is not None
+
+
+# =============================================================================
 # Overlay Filesystem Management (for Raspberry Pi)
 # =============================================================================
 
@@ -142,6 +246,121 @@ def reboot_system():
 def serve_index():
     """Serve the main React app."""
     return send_from_directory(WEB_APP_FOLDER, 'index.html')
+
+
+# =============================================================================
+# Authentication Endpoints
+# =============================================================================
+
+@app.route("/api/auth/status", methods=["GET"])
+@cross_origin()
+def auth_status():
+    """Check if password is set and if provided token is valid."""
+    password_is_set = is_password_set()
+    
+    # Check if token is provided and valid
+    token_valid = False
+    if 'Authorization' in request.headers:
+        try:
+            token = request.headers['Authorization'].split(' ')[1]
+            token_valid = verify_token(token) is not None
+        except:
+            pass
+    
+    return jsonify({
+        "password_set": password_is_set,
+        "authenticated": token_valid
+    }), 200
+
+
+@app.route("/api/auth/setup", methods=["POST"])
+@cross_origin()
+def setup_password():
+    """Set up initial password (only works if no password exists)."""
+    if is_password_set():
+        return jsonify({"error": "Password already set"}), 400
+    
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    data = request.get_json()
+    password = data.get('password')
+    
+    if not password or len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    if save_password_hash(password):
+        token = generate_token()
+        return jsonify({
+            'message': 'Password set successfully',
+            'token': token
+        }), 200
+    
+    return jsonify({'error': 'Failed to save password'}), 500
+
+
+@app.route("/api/auth/login", methods=["POST"])
+@cross_origin()
+def login():
+    """Authenticate and receive JWT token."""
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    data = request.get_json()
+    password = data.get('password')
+    
+    if not password:
+        return jsonify({'error': 'Password required'}), 400
+    
+    if verify_password(password):
+        token = generate_token()
+        logger.info("Successful login")
+        return jsonify({
+            'message': 'Login successful',
+            'token': token
+        }), 200
+    
+    logger.warning("Failed login attempt")
+    return jsonify({'error': 'Invalid password'}), 401
+
+
+@app.route("/api/auth/verify", methods=["GET"])
+@cross_origin()
+@token_required
+def verify_auth():
+    """Verify that the current token is valid."""
+    return jsonify({'message': 'Token is valid'}), 200
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@cross_origin()
+@token_required
+def change_password():
+    """Change password (requires authentication)."""
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    data = request.get_json()
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    
+    if not old_password or not new_password:
+        return jsonify({'error': 'Both old and new passwords required'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters'}), 400
+    
+    if not verify_password(old_password):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+    
+    if save_password_hash(new_password):
+        token = generate_token()
+        return jsonify({
+            'message': 'Password changed successfully',
+            'token': token
+        }), 200
+    
+    return jsonify({'error': 'Failed to change password'}), 500
 
 
 @app.route('/<path:path>')
@@ -214,6 +433,7 @@ def serve_image(filename):
 
 @app.route("/delete_image", methods=["DELETE"])
 @cross_origin()
+@token_required
 def delete_images():
     """
     Delete one or more image files by filename.
@@ -259,6 +479,7 @@ def allowed_file(filename):
 
 @app.route('/upload_image', methods=['POST'])
 @cross_origin()
+@token_required
 def upload_image():
     """
     Upload a new image file.
@@ -301,6 +522,7 @@ def upload_image():
 
 @app.route('/set_brightness', methods=['POST'])
 @cross_origin()
+@token_required
 def set_brightness():
     """Set display brightness (1-100)."""
     if not request.is_json:
@@ -327,6 +549,7 @@ def set_brightness():
 
 @app.route('/set_hold_seconds', methods=['POST'])
 @cross_origin()
+@token_required
 def set_hold_seconds():
     """Set how long each image is displayed (in seconds)."""
     if not request.is_json:
@@ -353,6 +576,7 @@ def set_hold_seconds():
 
 @app.route("/turn_on", methods=["POST", "GET"])
 @cross_origin()
+@token_required
 def turn_on():
     """Turn on the LED display."""
     success = send_ctl(b"on")
@@ -363,6 +587,7 @@ def turn_on():
 
 @app.route("/turn_off", methods=["POST", "GET"])
 @cross_origin()
+@token_required
 def turn_off():
     """Turn off the LED display."""
     success = send_ctl(b"off")
@@ -387,6 +612,7 @@ def overlay_status():
 
 @app.route("/api/overlay/disable", methods=["POST"])
 @cross_origin()
+@token_required
 def disable_overlay():
     """
     Disable overlay filesystem to allow writes.
@@ -404,6 +630,7 @@ def disable_overlay():
 
 @app.route("/api/overlay/enable", methods=["POST"])
 @cross_origin()
+@token_required
 def enable_overlay():
     """
     Enable overlay filesystem for read-only protection.
@@ -421,6 +648,7 @@ def enable_overlay():
 
 @app.route("/api/reboot", methods=["POST"])
 @cross_origin()
+@token_required
 def reboot():
     """Reboot the Raspberry Pi."""
     if reboot_system():

@@ -1,14 +1,15 @@
 [Unit]
-Description=LED Matrix Web Server
+Description=LED Matrix System (Viewer + Web Server)
 After=network.target
 
 [Service]
-Type=simple
+Type=forking
 User=root
 WorkingDirectory=/home/pi/rpi-led-matrix
-ExecStart=/usr/bin/python3 /home/pi/rpi-led-matrix/server.py
+ExecStart=/home/pi/rpi-led-matrix/start.sh
+ExecStop=/home/pi/rpi-led-matrix/stop.sh
 Restart=always
-RestartSec=5
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
