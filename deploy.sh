@@ -18,22 +18,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$SCRIPT_DIR"
 SERVICE_NAME="led-matrix-system"
 
-echo "Installing to: $INSTALL_DIR"
-
-echo "[1/7] Installing system dependencies..."
-apt-get update
-apt-get install -y python3 python3-pip python3-venv python3-dev \
-    libopenjp2-7 libtiff5 libatlas-base-dev \
-    git build-essential curl
-
-echo "[2/7] Installing Node.js (for web app build)..."
-if ! command -v npm &> /dev/null; then
-    echo "Node.js not found, installing..."
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-    apt-get install -y nodejs
-else
-    echo "Node.js already installed ($(node --version))"
-fi
 
 echo "[3/7] Creating Python virtual environment..."
 cd "$INSTALL_DIR"
