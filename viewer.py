@@ -187,8 +187,14 @@ def blit(matrix, off, frame_u8):
     # Ensure frame_u8 is uint8 numpy array
     if not (isinstance(frame_u8, np.ndarray) and frame_u8.dtype == np.uint8):
         frame_u8 = np.array(frame_u8, dtype=np.uint8)
-    pil_frame = PILImage.fromarray(frame_u8, mode="RGB")
-    off.SetImage(pil_frame, 0, 0)
+    
+    # Use pixel-by-pixel setting instead of SetImage to avoid PIL version issues
+    height, width = frame_u8.shape[:2]
+    for y in range(height):
+        for x in range(width):
+            r, g, b = frame_u8[y, x]
+            off.SetPixel(x, y, r, g, b)
+    
     return matrix.SwapOnVSync(off)
 
 def smoothstep(t):
