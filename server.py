@@ -439,47 +439,44 @@ def serve_thumbnail(filename):
     from io import BytesIO
     from flask import send_file
     
+    import urllib.parse
     try:
-        file_path = os.path.join(IMAGE_FOLDER, filename)
-        
+        # Decode URL-encoded filename
+        decoded_filename = urllib.parse.unquote(filename)
+        file_path = os.path.join(IMAGE_FOLDER, decoded_filename)
+        logger.info(f"Thumbnail requested: {decoded_filename} -> {file_path}")
         # Security check
         if not os.path.abspath(file_path).startswith(os.path.abspath(IMAGE_FOLDER)):
-            return jsonify({"error": "Invalid filename"}), 400
-        
+            raise Exception("Invalid filename")
+        # Try case-insensitive match if not found
         if not os.path.exists(file_path):
-            return jsonify({"error": "File not found"}), 404
-        
+            files = os.listdir(IMAGE_FOLDER)
+            match = next((f for f in files if f.lower() == decoded_filename.lower()), None)
+            if match:
+                file_path = os.path.join(IMAGE_FOLDER, match)
+            else:
+                raise Exception(f"File not found: {decoded_filename}")
         # Open and resize image
         img = Image.open(file_path)
         img.thumbnail((150, 150), Image.LANCZOS)
-        
-        # Determine output format
-        fmt = 'JPEG'
-        mimetype = 'image/jpeg'
-        if filename.lower().endswith('.png'):
-            fmt = 'PNG'
-            mimetype = 'image/png'
-        elif filename.lower().endswith('.webp'):
-            fmt = 'WEBP'
-            mimetype = 'image/webp'
-        elif filename.lower().endswith('.gif'):
-            fmt = 'GIF'
-            mimetype = 'image/gif'
-        
-        # Convert RGBA to RGB for JPEG
-        if fmt == 'JPEG' and img.mode in ('RGBA', 'P'):
-            img = img.convert('RGB')
-        
-        # Save to buffer
+        # Always PNG
+        fmt = 'PNG'
+        mimetype = 'image/png'
+        if img.mode not in ('RGB', 'RGBA'):
+            img = img.convert('RGBA')
         buffer = BytesIO()
-        img.save(buffer, format=fmt, quality=70)
+        img.save(buffer, format=fmt, optimize=True)
         buffer.seek(0)
-        
         return send_file(buffer, mimetype=mimetype)
     except Exception as e:
-        logger.error(f"Failed to generate thumbnail: {e}")
-        # Fallback to full image
-        return send_from_directory(IMAGE_FOLDER, filename)
+        logger.error(f"Failed to generate thumbnail for '{filename}': {e}")
+        from PIL import Image as PILImage
+        import io
+        error_img = PILImage.new('RGBA', (1, 1), (0, 0, 0, 0))
+        buf = io.BytesIO()
+        error_img.save(buf, format='PNG')
+        buf.seek(0)
+        return send_file(buf, mimetype='image/png')
 
 
 @app.route("/delete_image", methods=["DELETE"])
