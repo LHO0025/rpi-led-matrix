@@ -666,6 +666,12 @@ if __name__ == "__main__":
     logger.info(f"Web app folder: {WEB_APP_FOLDER}")
     logger.info(f"Config file: {CONFIG_FILE}")
     
+    # Set default password if none exists
+    if not is_password_set():
+        default_password = "jakipz123"
+        save_password_hash(default_password)
+        logger.info(f"Default password set: {default_password}")
+    
     # Load and log current config
     config = load_config()
     logger.info(f"Current config: {config}")
