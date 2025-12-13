@@ -177,7 +177,15 @@ def scale_perceptual(img_u8, scale01):
     return _TO_GAMMA[out.astype(np.uint8)]
 
 def blit(matrix, off, frame_u8):
-    pil_frame = Image.fromarray(frame_u8, mode="RGB")
+    import numpy as np
+    from PIL import Image as PILImage
+    # If frame_u8 is a PIL.Image.Image, convert to numpy array
+    if isinstance(frame_u8, PILImage.Image):
+        frame_u8 = np.array(frame_u8)
+    # Ensure frame_u8 is uint8 numpy array
+    if not (isinstance(frame_u8, np.ndarray) and frame_u8.dtype == np.uint8):
+        frame_u8 = np.array(frame_u8, dtype=np.uint8)
+    pil_frame = PILImage.fromarray(frame_u8, mode="RGB")
     off.SetImage(pil_frame, 0, 0)
     return matrix.SwapOnVSync(off)
 
