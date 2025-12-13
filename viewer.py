@@ -147,7 +147,9 @@ def load_images(folder, target_size):
     imgs = []
     for p in sorted(paths):
         try:
-            img = Image.open(p).convert("RGB")
+            img = Image.open(p)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
             img.thumbnail(target_size, Image.LANCZOS)
             canvas = Image.new("RGB", target_size, (0, 0, 0))
             x = (target_size[0] - img.width) // 2
