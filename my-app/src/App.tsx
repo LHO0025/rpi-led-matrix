@@ -9,7 +9,7 @@ import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { Slider } from './components/ui/slider';
 import { ConfirmDialog } from './components/ui/dialog';
-import { ClimbingBoxLoader } from "react-spinners";
+import { PulseLoader } from "react-spinners";
 
 // Use relative URL when served from same server, or specify full URL for development
 export const SERVER_URL = import.meta.env.DEV ? "http://192.168.0.127:5000" : ""
@@ -84,7 +84,7 @@ function App() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <ClimbingBoxLoader color={"white"} />
+        <PulseLoader color={"white"} />
       </div>
     )
   }
@@ -321,8 +321,8 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
         {/* Pending changes banner */}
         {hasChanges && (
-          <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-600 rounded-lg flex items-center justify-between">
-            <span className="text-yellow-200">You have unsaved changes</span>
+          <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-600 rounded-lg">
+            <p className="text-yellow-200 mb-3">You have unsaved changes</p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={discardChanges}>
                 Discard
@@ -338,28 +338,29 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
         {/* Image gallery */}
         <div className="relative grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1 max-h-[55vh] overflow-y-scroll">
           {isApplying && (
-            <div className='absolute left-0 top-0 w-full h-full bg-black/50 z-50 pointer-events-auto flex justify-center items-center'>
-              <ClimbingBoxLoader color={"white"} loading={true} />
+            <div className='absolute left-0 top-0 w-full h-full bg-black/80 z-50 pointer-events-auto flex justify-center items-center'>
+              <PulseLoader color={"white"} />
             </div>
           )}
           {images.length > 0 ? (
             images.map((url, idx) => {
               const isPending = url.startsWith('pending:')
-              const displayUrl = isPending ? URL.createObjectURL(pendingUploads.find(f => f.name === url.replace('pending:', ''))!) : url
+              const pendingFile = isPending ? pendingUploads.find(f => f.name === url.replace('pending:', '')) : null
               const isMarkedForDelete = toBeDeleted.includes(url)
 
               return (
                 <div
-                  key={idx}
+                  key={`${url}-${idx}`}
                   className={`relative cursor-pointer border-2 rounded overflow-hidden
                     ${isMarkedForDelete ? 'border-red-500 opacity-50' : 'border-transparent'}
                     ${isPending ? 'border-green-500' : ''}`}
                   onClick={() => toggleDeleteImage(url)}
                 >
                   <img
-                    src={isPending ? displayUrl : `${SERVER_URL}/images/${url}`}
+                    src={isPending && pendingFile ? URL.createObjectURL(pendingFile) : `${SERVER_URL}/images/thumb/${url}`}
                     alt={isPending ? url.replace('pending:', '') : url}
                     className="w-full h-24 object-cover"
+                    loading="lazy"
                   />
                   {isPending && (
                     <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1 rounded">

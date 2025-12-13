@@ -431,6 +431,57 @@ def serve_image(filename):
     return send_from_directory(IMAGE_FOLDER, filename)
 
 
+@app.route("/images/thumb/<filename>", methods=["GET"])
+@cross_origin()
+def serve_thumbnail(filename):
+    """Serve a thumbnail version of an image (max 150x150)."""
+    from PIL import Image
+    from io import BytesIO
+    from flask import send_file
+    
+    try:
+        file_path = os.path.join(IMAGE_FOLDER, filename)
+        
+        # Security check
+        if not os.path.abspath(file_path).startswith(os.path.abspath(IMAGE_FOLDER)):
+            return jsonify({"error": "Invalid filename"}), 400
+        
+        if not os.path.exists(file_path):
+            return jsonify({"error": "File not found"}), 404
+        
+        # Open and resize image
+        img = Image.open(file_path)
+        img.thumbnail((150, 150), Image.LANCZOS)
+        
+        # Determine output format
+        fmt = 'JPEG'
+        mimetype = 'image/jpeg'
+        if filename.lower().endswith('.png'):
+            fmt = 'PNG'
+            mimetype = 'image/png'
+        elif filename.lower().endswith('.webp'):
+            fmt = 'WEBP'
+            mimetype = 'image/webp'
+        elif filename.lower().endswith('.gif'):
+            fmt = 'GIF'
+            mimetype = 'image/gif'
+        
+        # Convert RGBA to RGB for JPEG
+        if fmt == 'JPEG' and img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+        
+        # Save to buffer
+        buffer = BytesIO()
+        img.save(buffer, format=fmt, quality=70)
+        buffer.seek(0)
+        
+        return send_file(buffer, mimetype=mimetype)
+    except Exception as e:
+        logger.error(f"Failed to generate thumbnail: {e}")
+        # Fallback to full image
+        return send_from_directory(IMAGE_FOLDER, filename)
+
+
 @app.route("/delete_image", methods=["DELETE"])
 @cross_origin()
 @token_required

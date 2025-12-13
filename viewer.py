@@ -140,7 +140,7 @@ def load_images(folder, target_size):
     if not os.path.isdir(folder):
         sys.exit(f"Folder '{folder}' not found")
     paths = [os.path.join(folder, f) for f in os.listdir(folder)
-             if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
+             if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"))]
     if not paths:
         sys.exit("No image files found in folder")
 
