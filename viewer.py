@@ -304,12 +304,13 @@ try:
             if new_images:
                 images = new_images
                 idx = 0
-                _, current_img = images[idx]
+                path, new_img = images[idx]
                 print(f"Reloaded {len(images)} images")
                 # Fade in the first image if display is on
                 if getIsRunning():
                     offscreen = fade_out_to_black(matrix, offscreen, current_img)
-                    offscreen = fade_in_from_black(matrix, offscreen, current_img)
+                    offscreen = fade_in_from_black(matrix, offscreen, new_img)
+                current_img = new_img
 
         now_running = getIsRunning()
 
