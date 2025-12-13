@@ -1,8 +1,8 @@
 import './App.css';
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
-import { Trash2, Upload, RefreshCw } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, GripVertical } from 'lucide-react';
 import ImageComponent from './ImageComponent';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
@@ -128,6 +128,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   const [serverImages, setServerImages] = useState<string[]>([])
   const [serverBrightness, setServerBrightness] = useState(50)
   const [serverHoldSeconds, setServerHoldSeconds] = useState(20)
+  const [serverOrder, setServerOrder] = useState<string[]>([])
 
   // Local pending state
   const [images, setImages] = useState<string[]>([])
@@ -135,6 +136,13 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   const [pendingUploads, setPendingUploads] = useState<File[]>([])
   const [brightness, setBrightness] = useState(50)
   const [holdSeconds, setHoldSeconds] = useState(20)
+
+  // Reordering state
+  const [isReorderMode, setIsReorderMode] = useState(false)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null)
 
   // UI state
   const [isApplying, setIsApplying] = useState(false)
@@ -146,24 +154,42 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
     'Content-Type': 'application/json'
   }
 
+  // Check if order has changed (comparing only non-pending images)
+  const currentNonPendingImages = images.filter(img => !img.startsWith('pending:'))
+  const orderChanged = JSON.stringify(currentNonPendingImages) !== JSON.stringify(serverOrder)
+
   // Check if there are pending changes
   const hasChanges =
     brightness !== serverBrightness ||
     holdSeconds !== serverHoldSeconds ||
     toBeDeleted.length > 0 ||
-    pendingUploads.length > 0
+    pendingUploads.length > 0 ||
+    orderChanged
 
   // Fetch initial data
   useEffect(() => {
-    // Fetch images
-    fetch(`${SERVER_URL}/images`)
+    // Fetch images with order
+    fetch(`${SERVER_URL}/images/order`)
       .then((res) => res.json())
       .then((data) => {
-        const imgs = data.images || []
-        setServerImages(imgs)
-        setImages(imgs)
+        const orderedImgs = data.order || []
+        setServerOrder(orderedImgs)
+        setServerImages(orderedImgs)
+        setImages(orderedImgs)
       })
-      .catch((err) => console.error("Error fetching images:", err))
+      .catch((err) => {
+        console.error("Error fetching image order:", err)
+        // Fallback to unordered list
+        fetch(`${SERVER_URL}/images`)
+          .then((res) => res.json())
+          .then((data) => {
+            const imgs = data.images || []
+            setServerImages(imgs)
+            setImages(imgs)
+            setServerOrder(imgs)
+          })
+          .catch((err) => console.error("Error fetching images:", err))
+      })
 
     // Fetch config
     fetch(`${SERVER_URL}/api/config`)
@@ -203,6 +229,8 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
   // Mark images for deletion
   function toggleDeleteImage(filename: string) {
+    if (isReorderMode) return // Don't delete while reordering
+    
     if (filename.startsWith('pending:')) {
       removePendingUpload(filename.replace('pending:', ''))
       return
@@ -214,6 +242,96 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
       setToBeDeleted(prev => [...prev, filename])
     }
   }
+
+  // Reorder functions
+  const handleDragStart = useCallback((index: number) => {
+    setDraggedIndex(index)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedIndex !== null && draggedIndex !== index) {
+      setDragOverIndex(index)
+    }
+  }, [draggedIndex])
+
+  const handleDrop = useCallback((index: number) => {
+    if (draggedIndex !== null && draggedIndex !== index) {
+      const newImages = [...images]
+      const [draggedItem] = newImages.splice(draggedIndex, 1)
+      newImages.splice(index, 0, draggedItem)
+      setImages(newImages)
+    }
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }, [draggedIndex, images])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }, [])
+
+  // Touch handlers for mobile reordering
+  const handleTouchStart = useCallback((e: React.TouchEvent, index: number) => {
+    if (!isReorderMode) return
+    
+    const touch = e.touches[0]
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+    
+    longPressTimerRef.current = setTimeout(() => {
+      setDraggedIndex(index)
+      // Vibrate for feedback if available
+      if (navigator.vibrate) {
+        navigator.vibrate(50)
+      }
+    }, 300)
+  }, [isReorderMode])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isReorderMode) return
+    
+    // Cancel long press if moved too much
+    if (longPressTimerRef.current && touchStartPosRef.current) {
+      const touch = e.touches[0]
+      const dx = Math.abs(touch.clientX - touchStartPosRef.current.x)
+      const dy = Math.abs(touch.clientY - touchStartPosRef.current.y)
+      if (dx > 10 || dy > 10) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+    }
+    
+    if (draggedIndex === null) return
+    
+    // Find element under touch
+    const touch = e.touches[0]
+    const elements = document.elementsFromPoint(touch.clientX, touch.clientY)
+    const imageElement = elements.find(el => el.hasAttribute('data-image-index'))
+    if (imageElement) {
+      const newIndex = parseInt(imageElement.getAttribute('data-image-index') || '-1', 10)
+      if (newIndex >= 0 && newIndex !== draggedIndex) {
+        setDragOverIndex(newIndex)
+      }
+    }
+  }, [isReorderMode, draggedIndex])
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    
+    if (draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex) {
+      const newImages = [...images]
+      const [draggedItem] = newImages.splice(draggedIndex, 1)
+      newImages.splice(dragOverIndex, 0, draggedItem)
+      setImages(newImages)
+    }
+    
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+    touchStartPosRef.current = null
+  }, [draggedIndex, dragOverIndex, images])
 
   // Apply all changes
   async function applyChanges() {
@@ -246,17 +364,33 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
       const data = await response.json()
 
       if (response.ok) {
-        // Refresh state from server
-        const imagesRes = await fetch(`${SERVER_URL}/images`)
-        const imagesData = await imagesRes.json()
-        const newImages = imagesData.images || []
+        // Save the new order (excluding pending and deleted)
+        const finalOrder = images
+          .filter(img => !img.startsWith('pending:') && !toBeDeleted.includes(img))
+        
+        // Add newly uploaded files to the order
+        const uploadedNames = pendingUploads.map(f => f.name)
+        const orderToSave = [...finalOrder.filter(img => !uploadedNames.includes(img.replace('pending:', ''))), ...uploadedNames]
+        
+        await fetch(`${SERVER_URL}/images/order`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ order: orderToSave })
+        })
 
-        setServerImages(newImages)
-        setImages(newImages)
+        // Refresh state from server
+        const orderRes = await fetch(`${SERVER_URL}/images/order`)
+        const orderData = await orderRes.json()
+        const newOrder = orderData.order || []
+
+        setServerOrder(newOrder)
+        setServerImages(newOrder)
+        setImages(newOrder)
         setServerBrightness(brightness)
         setServerHoldSeconds(holdSeconds)
         setToBeDeleted([])
         setPendingUploads([])
+        setIsReorderMode(false)
       }
     } catch (err) {
       console.error("Error applying changes:", err)
@@ -267,11 +401,12 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
   // Discard all changes
   function discardChanges() {
-    setImages(serverImages)
+    setImages(serverOrder)
     setBrightness(serverBrightness)
     setHoldSeconds(serverHoldSeconds)
     setToBeDeleted([])
     setPendingUploads([])
+    setIsReorderMode(false)
   }
 
   // Immediate actions (no confirmation needed)
@@ -335,6 +470,28 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
           </div>
         )}
 
+        {/* Reorder mode toggle */}
+        <div className="mb-3 flex items-center gap-3">
+          <Button 
+            variant={isReorderMode ? "default" : "outline"} 
+            size="sm"
+            onClick={() => setIsReorderMode(!isReorderMode)}
+          >
+            <GripVertical className="mr-2" size={16} />
+            {isReorderMode ? "Done Reordering" : "Reorder Images"}
+          </Button>
+          {isReorderMode && (
+            <span className="text-sm text-gray-400">
+              Drag images to reorder
+            </span>
+          )}
+          {orderChanged && !isReorderMode && (
+            <span className="text-sm text-yellow-400">
+              Order modified
+            </span>
+          )}
+        </div>
+
         {/* Image gallery */}
         <div className="relative grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1 max-h-[55vh] overflow-y-scroll">
           {isApplying && (
@@ -347,19 +504,38 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
               const isPending = url.startsWith('pending:')
               const pendingFile = isPending ? pendingUploads.find(f => f.name === url.replace('pending:', '')) : null
               const isMarkedForDelete = toBeDeleted.includes(url)
+              const isDragging = draggedIndex === idx
+              const isDragOver = dragOverIndex === idx
 
               return (
                 <div
                   key={`${url}-${idx}`}
-                  className={`relative cursor-pointer border-2 rounded overflow-hidden
+                  data-image-index={idx}
+                  draggable={isReorderMode && !isPending}
+                  onDragStart={() => isReorderMode && handleDragStart(idx)}
+                  onDragOver={(e) => isReorderMode && handleDragOver(e, idx)}
+                  onDrop={() => isReorderMode && handleDrop(idx)}
+                  onDragEnd={handleDragEnd}
+                  onTouchStart={(e) => handleTouchStart(e, idx)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  className={`relative cursor-pointer border-2 rounded overflow-hidden transition-all
                     ${isMarkedForDelete ? 'border-red-500 opacity-50' : 'border-transparent'}
-                    ${isPending ? 'border-green-500' : ''}`}
-                  onClick={() => toggleDeleteImage(url)}
+                    ${isPending ? 'border-green-500' : ''}
+                    ${isDragging ? 'opacity-50 scale-95 border-blue-500' : ''}
+                    ${isDragOver ? 'border-blue-400 scale-105' : ''}
+                    ${isReorderMode && !isPending ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  onClick={() => !isReorderMode && toggleDeleteImage(url)}
                 >
+                  {isReorderMode && !isPending && (
+                    <div className="absolute top-1 right-1 z-10 bg-black/50 rounded p-0.5">
+                      <GripVertical size={14} className="text-white" />
+                    </div>
+                  )}
                   <img
                     src={isPending && pendingFile ? URL.createObjectURL(pendingFile) : `${SERVER_URL}/images/thumb/${url}`}
                     alt={isPending ? url.replace('pending:', '') : url}
-                    className="w-full h-24 object-cover"
+                    className="w-full h-24 object-cover pointer-events-none"
                     loading="lazy"
                   />
                   {isPending && (
@@ -370,6 +546,12 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
                   {isMarkedForDelete && (
                     <div className="absolute inset-0 flex items-center justify-center bg-red-500/30">
                       <Trash2 className="text-red-500" size={24} />
+                    </div>
+                  )}
+                  {/* Position indicator in reorder mode */}
+                  {isReorderMode && (
+                    <div className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                      {idx + 1}
                     </div>
                   )}
                 </div>
@@ -407,7 +589,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
               ref={fileInputRef}
               onChange={handleFileSelect}
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
               multiple
             />
             <Upload size={20} className="text-gray-400" />

@@ -519,6 +519,86 @@ def delete_images():
     return jsonify({"deleted": deleted, "errors": errors}), 200
 
 
+ORDER_FILE = os.path.join(IMAGE_FOLDER, "order.json")
+
+
+@app.route("/images/order", methods=["GET"])
+@cross_origin()
+def get_image_order():
+    """Get the current image display order."""
+    import json
+    try:
+        if os.path.exists(ORDER_FILE):
+            with open(ORDER_FILE, 'r') as f:
+                order = json.load(f)
+            return jsonify({"order": order}), 200
+        else:
+            # Return images in default alphabetical order
+            image_files = sorted([
+                f for f in os.listdir(IMAGE_FOLDER)
+                if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+            ])
+            return jsonify({"order": image_files}), 200
+    except Exception as e:
+        logger.error(f"Failed to get image order: {e}")
+        return jsonify({"error": "Failed to get image order"}), 500
+
+
+@app.route("/images/order", methods=["POST"])
+@cross_origin()
+@token_required
+def set_image_order():
+    """
+    Set the image display order.
+    Accepts JSON: { "order": ["file1.jpg", "file2.png", ...] }
+    """
+    import json
+    
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    data = request.get_json()
+    if 'order' not in data:
+        return jsonify({'error': 'Missing order array'}), 400
+    
+    order = data['order']
+    if not isinstance(order, list):
+        return jsonify({'error': 'Order must be an array of filenames'}), 400
+    
+    # Validate that all files exist
+    existing_files = set(
+        f for f in os.listdir(IMAGE_FOLDER)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+    )
+    
+    invalid_files = [f for f in order if f not in existing_files]
+    if invalid_files:
+        logger.warning(f"Order contains non-existent files: {invalid_files}")
+    
+    # Only save valid files, in the requested order
+    valid_order = [f for f in order if f in existing_files]
+    
+    # Add any files not in the order list (new uploads) at the end
+    for f in existing_files:
+        if f not in valid_order:
+            valid_order.append(f)
+    
+    try:
+        with open(ORDER_FILE, 'w') as f:
+            json.dump(valid_order, f, indent=2)
+        logger.info(f"Image order saved: {len(valid_order)} images")
+        
+        # Optionally send reload to viewer to pick up new order
+        # send_ctl(b"reload")  # Uncomment if you want immediate order update
+        
+        return jsonify({
+            'message': 'Order saved successfully',
+            'order': valid_order
+        }), 200
+    except Exception as e:
+        logger.error(f"Failed to save image order: {e}")
+        return jsonify({'error': 'Failed to save order. Filesystem may be read-only.'}), 500
+
 
 def allowed_file(filename):
     """Check if file extension is allowed."""

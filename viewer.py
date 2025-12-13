@@ -136,32 +136,110 @@ GAMMA = 2.2
 
 # -----------------------------
 
-def load_images(folder, target_size):
+ORDER_FILE = os.path.join(IMAGE_FOLDER, "order.json")
+
+def load_order():
+    """Load image order from order.json if it exists."""
+    import json
+    if os.path.isfile(ORDER_FILE):
+        try:
+            with open(ORDER_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading order.json: {e}")
+    return None
+
+def load_images(folder, target_size, allow_empty=False):
+    """
+    Load images from folder. Returns list of tuples:
+    - For static images: (path, numpy_array, None)
+    - For GIFs: (path, list_of_numpy_frames, list_of_durations_ms)
+    """
     if not os.path.isdir(folder):
+        if allow_empty:
+            print(f"Folder '{folder}' not found")
+            return []
         sys.exit(f"Folder '{folder}' not found")
-    paths = [os.path.join(folder, f) for f in os.listdir(folder)
+    
+    files = [f for f in os.listdir(folder)
              if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"))]
-    if not paths:
+    
+    if not files:
+        if allow_empty:
+            print("No image files found in folder")
+            return []
         sys.exit("No image files found in folder")
 
+    # Sort by order.json if available, otherwise alphabetically
+    order = load_order()
+    if order:
+        # Create a map of filename -> position
+        order_map = {name: idx for idx, name in enumerate(order)}
+        # Sort files: ordered files first (by their order), then unordered files alphabetically
+        def sort_key(f):
+            if f in order_map:
+                return (0, order_map[f], f)
+            return (1, 0, f)
+        files = sorted(files, key=sort_key)
+    else:
+        files = sorted(files)
+    
+    paths = [os.path.join(folder, f) for f in files]
+
     imgs = []
-    for p in sorted(paths):
+    for p in paths:
         try:
             img = Image.open(p)
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            img.thumbnail(target_size, Image.LANCZOS)
-            canvas = Image.new("RGB", target_size, (0, 0, 0))
-            x = (target_size[0] - img.width) // 2
-            y = (target_size[1] - img.height) // 2
-            canvas.paste(img, (x, y))
-            arr = np.asarray(canvas, dtype=np.uint8)
-            imgs.append((p, arr))
+            
+            # Check if it's an animated GIF
+            is_animated = getattr(img, "is_animated", False) and p.lower().endswith('.gif')
+            
+            if is_animated:
+                # Load all frames of the GIF
+                frames = []
+                durations = []
+                try:
+                    while True:
+                        # Get frame duration (default 100ms if not specified)
+                        duration = img.info.get('duration', 100)
+                        durations.append(duration)
+                        
+                        # Convert frame to RGB and resize
+                        frame = img.convert("RGB")
+                        frame.thumbnail(target_size, Image.LANCZOS)
+                        canvas = Image.new("RGB", target_size, (0, 0, 0))
+                        x = (target_size[0] - frame.width) // 2
+                        y = (target_size[1] - frame.height) // 2
+                        canvas.paste(frame, (x, y))
+                        frames.append(np.asarray(canvas, dtype=np.uint8))
+                        
+                        img.seek(img.tell() + 1)
+                except EOFError:
+                    pass  # End of frames
+                
+                if frames:
+                    imgs.append((p, frames, durations))
+                    print(f"Loaded animated GIF: {p} ({len(frames)} frames)")
+            else:
+                # Static image
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.thumbnail(target_size, Image.LANCZOS)
+                canvas = Image.new("RGB", target_size, (0, 0, 0))
+                x = (target_size[0] - img.width) // 2
+                y = (target_size[1] - img.height) // 2
+                canvas.paste(img, (x, y))
+                arr = np.asarray(canvas, dtype=np.uint8)
+                imgs.append((p, arr, None))
         except Exception as e:
             print(f"Skipping {p}: {e}")
+    
     if not imgs:
+        if allow_empty:
+            print("No valid images after loading")
+            return []
         sys.exit("No valid images after loading")
-    # random.shuffle(imgs)
+    
     return imgs
 
 def make_gamma_tables(gamma=GAMMA):
@@ -227,17 +305,74 @@ def fade_in_from_black(matrix, off, img):
     return fade_to_level(matrix, off, img, start_level=0.0, end_level=1.0)
 
 def show_still(matrix, off, img, seconds):
+    """Display a static image for the specified duration."""
     start = time.time()
     end = start + seconds
 
     while time.time() < end:
         if not getIsRunning():
             break
+        if should_reload():
+            # Return early to allow reload processing
+            return off, True
         # Use blit instead of SetImage to avoid PIL issues
         off = blit(matrix, off, img)
         time.sleep(0.1)  # lower interval for more responsive brightness updates
 
-    return off
+    return off, False
+
+
+def show_gif(matrix, off, frames, durations, total_seconds):
+    """
+    Play an animated GIF in a loop until total_seconds have elapsed.
+    Returns (offscreen, reload_requested).
+    """
+    start = time.time()
+    end = start + total_seconds
+    frame_idx = 0
+    num_frames = len(frames)
+    
+    while time.time() < end:
+        if not getIsRunning():
+            break
+        if should_reload():
+            return off, True
+        
+        # Display current frame
+        off = blit(matrix, off, frames[frame_idx])
+        
+        # Wait for frame duration (convert ms to seconds)
+        frame_duration = durations[frame_idx] / 1000.0
+        frame_start = time.time()
+        while time.time() - frame_start < frame_duration:
+            if not getIsRunning() or should_reload():
+                return off, should_reload()
+            # Check more frequently for responsiveness
+            time.sleep(min(0.05, frame_duration / 2))
+        
+        # Advance to next frame (loop)
+        frame_idx = (frame_idx + 1) % num_frames
+    
+    return off, False
+
+
+def get_display_frame(image_data):
+    """
+    Get the first frame for display (for fading).
+    image_data is (path, frames_or_array, durations_or_none)
+    """
+    path, data, durations = image_data
+    if durations is not None:
+        # Animated GIF - return first frame
+        return data[0]
+    else:
+        # Static image
+        return data
+
+
+def is_animated(image_data):
+    """Check if image_data represents an animated GIF."""
+    return image_data[2] is not None
 
 # ----- Matrix config -----
 options = RGBMatrixOptions()
@@ -259,7 +394,8 @@ offscreen = matrix.CreateFrameCanvas()
 
 idx = 0
 images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
-path, current_img = images[idx]
+path, data, durations = images[idx]
+current_img = get_display_frame(images[idx])
 
 def handle_off(event, value):
     with lock:
@@ -320,18 +456,20 @@ try:
             # Reload config
             _, new_hold = load_config()
             set_hold_seconds(new_hold)
-            # Reload images
-            new_images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
+            # Reload images (allow_empty=True to prevent crash if all images deleted)
+            new_images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height), allow_empty=True)
             if new_images:
                 images = new_images
                 idx = 0
-                path, new_img = images[idx]
+                new_img = get_display_frame(images[idx])
                 print(f"Reloaded {len(images)} images")
-                # Fade in the first image if display is on
+                # Fade transition if display is on
                 if getIsRunning():
                     offscreen = fade_out_to_black(matrix, offscreen, current_img)
                     offscreen = fade_in_from_black(matrix, offscreen, new_img)
                 current_img = new_img
+            else:
+                print("No images found after reload, keeping current state")
 
         now_running = getIsRunning()
 
@@ -347,11 +485,24 @@ try:
         prev_running = now_running
 
         if now_running:
-            offscreen = show_still(matrix, offscreen, current_img, get_hold_seconds())
-            # advance only if still on and no reload pending
-            if getIsRunning() and not should_reload():
+            # Check if current image is animated GIF
+            current_data = images[idx]
+            if is_animated(current_data):
+                # Play GIF animation for hold_seconds
+                path, frames, durations = current_data
+                offscreen, reload_triggered = show_gif(matrix, offscreen, frames, durations, get_hold_seconds())
+            else:
+                # Show static image
+                offscreen, reload_triggered = show_still(matrix, offscreen, current_img, get_hold_seconds())
+            
+            # If reload was triggered during display, continue to process it
+            if reload_triggered:
+                continue
+            
+            # Advance to next image only if still on
+            if getIsRunning():
                 idx = (idx + 1) % len(images)
-                next_path, next_img = images[idx]
+                next_img = get_display_frame(images[idx])
                 offscreen = fade_out_to_black(matrix, offscreen, current_img)
                 if BLACK_PAUSE_S > 0:
                     time.sleep(BLACK_PAUSE_S)
