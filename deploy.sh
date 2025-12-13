@@ -13,12 +13,35 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-INSTALL_DIR="/home/pi/rpi-led-matrix"
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$SCRIPT_DIR"
 SERVICE_NAME="led-matrix-system"
+
+echo "Installing to: $INSTALL_DIR"
+
+echo "[1/7] Installing system dependencies..."
+apt-get update
+apt-get install -y python3 python3-pip python3-venv python3-dev \
+    libopenjp2-7 libtiff5 libatlas-base-dev \
+    git build-essential curl
+
+echo "[2/7] Installing Node.js (for web app build)..."
+if ! command -v npm &> /dev/null; then
+    echo "Node.js not found, installing..."
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    apt-get install -y nodejs
+else
+    echo "Node.js already installed ($(node --version))"
+fi
 
 echo "[3/7] Creating Python virtual environment..."
 cd "$INSTALL_DIR"
-python3 -m venv venv
+if [ -d "venv" ]; then
+    echo "Virtual environment already exists, skipping..."
+else
+    python3 -m venv venv
+fi
 source venv/bin/activate
 
 echo "[4/7] Installing Python dependencies..."
@@ -28,19 +51,27 @@ pip install -r requirements.txt
 # Install RGB Matrix library if not already installed
 if ! python3 -c "import rgbmatrix" 2>/dev/null; then
     echo "Installing RGB Matrix Python library..."
-    cd /tmp
-    git clone https://github.com/hzeller/rpi-rgb-led-matrix.git || true
+    TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
+    git clone https://github.com/hzeller/rpi-rgb-led-matrix.git
     cd rpi-rgb-led-matrix/bindings/python
     make build-python PYTHON=$(which python3)
     make install-python PYTHON=$(which python3)
     cd "$INSTALL_DIR"
+    rm -rf "$TEMP_DIR"
+else
+    echo "RGB Matrix library already installed"
 fi
 
 echo "[5/7] Building web application..."
-cd "$INSTALL_DIR/my-app"
-npm install
-npm run build
-cd "$INSTALL_DIR"
+if [ -d "$INSTALL_DIR/my-app" ]; then
+    cd "$INSTALL_DIR/my-app"
+    npm install
+    npm run build
+    cd "$INSTALL_DIR"
+else
+    echo "WARNING: my-app directory not found, skipping web build"
+fi
 
 echo "[6/7] Setting up configuration files..."
 # Create default config if doesn't exist
@@ -50,31 +81,62 @@ if [ ! -f "config.ini" ]; then
 brightness = 75
 hold_seconds = 20
 EOF
+    echo "Created config.ini"
+else
+    echo "config.ini already exists"
 fi
 
 # Generate JWT secret
 if [ ! -f ".env" ]; then
     echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" > .env
     chmod 600 .env
+    echo "Generated JWT secret key"
+else
+    echo ".env already exists"
 fi
 
 # Create image folder
 mkdir -p matrix_images
+echo "Created matrix_images directory"
 
 # Make scripts executable
 chmod +x start.sh stop.sh deploy.sh
+echo "Made scripts executable"
 
 echo "[7/7] Setting up systemd service..."
-# Update service file paths
-sed -i "s|/home/pi/rpi-led-matrix|$INSTALL_DIR|g" led-matrix-server.service
+# Create service file with correct paths
+cat > /etc/systemd/system/$SERVICE_NAME.service << EOF
+[Unit]
+Description=LED Matrix System (Viewer + Web Server)
+After=network.target
 
-# Copy service file
-cp led-matrix-server.service /etc/systemd/system/$SERVICE_NAME.service
+[Service]
+Type=forking
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/start.sh
+ExecStop=$INSTALL_DIR/stop.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 # Set up sudoers for overlay management (passwordless)
-echo "pi ALL=(ALL) NOPASSWD: /usr/bin/raspi-config" > /etc/sudoers.d/led-matrix
-echo "pi ALL=(ALL) NOPASSWD: /sbin/reboot" >> /etc/sudoers.d/led-matrix
-chmod 440 /etc/sudoers.d/led-matrix
+if [ ! -f /etc/sudoers.d/led-matrix ]; then
+    echo "pi ALL=(ALL) NOPASSWD: /usr/bin/raspi-config" > /etc/sudoers.d/led-matrix
+    echo "pi ALL=(ALL) NOPASSWD: /sbin/reboot" >> /etc/sudoers.d/led-matrix
+    chmod 440 /etc/sudoers.d/led-matrix
+    echo "Created sudoers configuration"
+else
+    echo "sudoers configuration already exists"
+fi
 
 # Reload systemd and enable service
 systemctl daemon-reload
@@ -94,10 +156,12 @@ echo "  2. You will be prompted to set a password"
 echo "  3. After setting password, you'll be logged in automatically"
 echo ""
 echo "Useful commands:"
-echo "  - Start system:       sudo ./start.sh"
-echo "  - Stop system:        sudo ./stop.sh"
+echo "  - Start system:       sudo $INSTALL_DIR/start.sh"
+echo "  - Stop system:        sudo $INSTALL_DIR/stop.sh"
 echo "  - Service status:     sudo systemctl status $SERVICE_NAME"
 echo "  - View logs:          sudo journalctl -u $SERVICE_NAME -f"
 echo "  - Viewer logs:        sudo tail -f /var/log/led-matrix-viewer.log"
 echo "  - Server logs:        sudo tail -f /var/log/led-matrix-server.log"
+echo ""
+echo "Installation directory: $INSTALL_DIR"
 echo ""

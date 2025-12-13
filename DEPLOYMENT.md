@@ -21,27 +21,33 @@ A complete system for controlling RGB LED matrix displays on Raspberry Pi with a
 
 ## Installation
 
-### Quick Setup
+### Quick Setup (Recommended)
 
-1. Clone the repository to your Raspberry Pi:
+On your Raspberry Pi, run these commands:
+
 ```bash
-cd /home/pi
-git clone <your-repo-url> rpi-led-matrix
+# Clone the repository
+git clone https://github.com/LHO0025/rpi-led-matrix.git
 cd rpi-led-matrix
-```
 
-2. Run the deployment script:
-```bash
+# Make deploy script executable and run it
+chmod +x deploy.sh
 sudo ./deploy.sh
 ```
 
-This will:
-- Install all dependencies
-- Build the web application
-- Set up systemd service
-- Start the system automatically
+That's it! The script will:
+- Install all system dependencies (Python, Node.js, build tools)
+- Create Python virtual environment
+- Install Python packages
+- Install RGB Matrix library
+- Build the React web application
+- Generate security keys
+- Set up systemd service for auto-start
+- Start the system
 
-### First-Time Setup
+The entire process takes 10-20 minutes depending on your Pi and internet speed.
+
+### Manual Setup (Advanced)
 
 1. Open your browser and navigate to: `http://<raspberry-pi-ip>:5000`
 2. You'll be prompted to create a password (minimum 6 characters)
