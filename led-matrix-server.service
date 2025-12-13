@@ -1,0 +1,19 @@
+[Unit]
+Description=LED Matrix Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/rpi-led-matrix
+ExecStart=/usr/bin/python3 /home/pi/rpi-led-matrix/server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

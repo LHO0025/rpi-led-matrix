@@ -47,6 +47,7 @@ def load_config():
 
 isRunning = True
 lock = threading.Lock()
+hold_seconds_lock = threading.Lock()
 CTRL_SOCK = "/tmp/ledctl.sock"
 try: os.unlink(CTRL_SOCK)
 except FileNotFoundError: pass
@@ -54,9 +55,22 @@ except FileNotFoundError: pass
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 sock.bind(CTRL_SOCK)
 
+# Global hold_seconds that can be updated dynamically
+current_hold_seconds = 30
+
+def get_hold_seconds():
+    with hold_seconds_lock:
+        return current_hold_seconds
+
+def set_hold_seconds(value):
+    global current_hold_seconds
+    with hold_seconds_lock:
+        current_hold_seconds = value
+    print(f"Hold seconds updated to {value}")
+
 def control_thread():
     while True:
-        msg, _ = sock.recvfrom(16)
+        msg, _ = sock.recvfrom(64)
         msg = msg.decode("utf-8") 
         if msg == "off":
             handle_off(None, None)
@@ -71,6 +85,15 @@ def control_thread():
                     print(f"Invalid brightness value: {value} (must be 1–100)")
             except ValueError:
                 print(f"Invalid brightness format: {msg}")
+        elif msg.startswith("hold:"):
+            try:
+                value = int(msg.split(":")[1])
+                if 1 <= value <= 3600:
+                    set_hold_seconds(value)
+                else:
+                    print(f"Invalid hold_seconds value: {value} (must be 1–3600)")
+            except ValueError:
+                print(f"Invalid hold format: {msg}")
         else:
             print(f"Unknown command: {msg}")
             
@@ -84,6 +107,7 @@ print("Starting viewer...")
 # ---------- Settings ----------
 IMAGE_FOLDER = "matrix_images"
 BRIGHTNESS, HOLD_SECONDS = load_config()
+current_hold_seconds = HOLD_SECONDS  # Initialize the global variable
 
 FADE_STEPS = 40          # increase for longer fades (e.g., 48)
 FADE_FPS   = 30          # lower = longer fades (e.g., 28)
@@ -265,7 +289,7 @@ try:
         prev_running = now_running
 
         if now_running:
-            offscreen = show_still(matrix, offscreen, current_img, HOLD_SECONDS)
+            offscreen = show_still(matrix, offscreen, current_img, get_hold_seconds())
             # advance only if still on
             if getIsRunning():
                 idx = (idx + 1) % len(images)

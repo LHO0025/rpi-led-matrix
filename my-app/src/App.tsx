@@ -10,12 +10,12 @@ import { Label } from './components/ui/label';
 import { Slider } from './components/ui/slider';
 import { ClimbingBoxLoader, ClipLoader } from "react-spinners";
 
-export const SERVER_URL = "http://192.168.137.127:5000"
+// Use relative URL when served from same server, or specify full URL for development
+export const SERVER_URL = import.meta.env.DEV ? "http://192.168.0.127:5000" : ""
 
 function App() {
-  const [images, setImages] = useState([]);
-  const [toBeDeleted, setToBeDeleted] = useState([]);
-  const [imageDelay, setImageDelay] = useState(0)
+  const [images, setImages] = useState([])
+  const [toBeDeleted, setToBeDeleted] = useState([])
 
   useEffect(() => {
     fetch(`${SERVER_URL}/images`) // change if Flask runs elsewhere
@@ -73,6 +73,18 @@ function App() {
   }
 
   const [brightness, setBrightness] = useState(50);
+  const [holdSeconds, setHoldSeconds] = useState(20);
+
+  // Fetch initial config on mount
+  useEffect(() => {
+    fetch(`${SERVER_URL}/api/config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.brightness) setBrightness(data.brightness);
+        if (data.hold_seconds) setHoldSeconds(data.hold_seconds);
+      })
+      .catch((err) => console.error("Error fetching config:", err));
+  }, []);
 
   function handleSelectedImage(event) {
     if (event.target.files[0]) {
@@ -91,7 +103,27 @@ function App() {
       body: JSON.stringify({ brightness: brightness }),
     })
       .then((res) => res.json())
-      .catch((err) => console.error("Error uploading image:", err));
+      .catch((err) => console.error("Error setting brightness:", err));
+  }
+
+  function handleUpdateHoldSeconds(seconds: number) {
+    fetch(`${SERVER_URL}/set_hold_seconds`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ hold_seconds: seconds }),
+    })
+      .then((res) => res.json())
+      .catch((err) => console.error("Error setting hold seconds:", err));
+  }
+
+  // Format seconds to human readable (e.g., "1m 30s")
+  function formatTime(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
   }
 
   function handleTurnOn() {
@@ -153,23 +185,28 @@ function App() {
               onValueCommit={(value) => handleUpdateBrightness(value[0])}
               defaultValue={[50]}
               max={100}
+              min={1}
               step={5}
             />
-            <span className='font-bold text-xl'>{brightness}%</span>
+            <span className='font-bold text-xl w-16'>{brightness}%</span>
           </div>
         </div>
 
-        {/* <div className="grid w-full items-center gap-3">
-          <Label>Time </Label>
+        <div className="grid w-full items-center gap-3">
+          <Label>Image Hold Time</Label>
           <div className="flex w-full items-center gap-5">
-            <Input
-              type='number'
-              value={imageDelay}
-              onChange={(e) => setImageDelay(parseInt(e.target.value))}
+            <Slider
+              value={[holdSeconds]}
+              onValueChange={(value) => setHoldSeconds(value[0])}
+              onValueCommit={(value) => handleUpdateHoldSeconds(value[0])}
+              defaultValue={[20]}
+              min={10}
+              max={300}
+              step={5}
             />
-            <span className='font-bold text-xl'>{imageDelay}s</span>
+            <span className='font-bold text-xl w-20'>{formatTime(holdSeconds)}</span>
           </div>
-        </div> */}
+        </div>
       </div>
 
 
