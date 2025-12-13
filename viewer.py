@@ -293,7 +293,6 @@ try:
     print("Press CTRL-C to stop.")
     print(f"Loaded {len(images)} images")
     print(f"Display is {'ON' if isRunning else 'OFF'}")
-    
     # Initial fade-in if display is on
     if isRunning:
         print("Performing initial fade-in...")
@@ -350,6 +349,8 @@ try:
 except KeyboardInterrupt:
     pass
 finally:
+    import traceback
     matrix.Clear()
     print("Exiting...")
+    traceback.print_exc()
     sys.exit(0)
