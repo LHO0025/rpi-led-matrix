@@ -227,16 +227,14 @@ def fade_in_from_black(matrix, off, img):
     return fade_to_level(matrix, off, img, start_level=0.0, end_level=1.0)
 
 def show_still(matrix, off, img, seconds):
-    pil_frame = Image.fromarray(img, mode="RGB")
     start = time.time()
     end = start + seconds
 
     while time.time() < end:
         if not getIsRunning():
             break
-        # Re-set image every loop to reflect brightness changes immediately
-        off.SetImage(pil_frame, 0, 0)
-        off = matrix.SwapOnVSync(off)
+        # Use blit instead of SetImage to avoid PIL issues
+        off = blit(matrix, off, img)
         time.sleep(0.1)  # lower interval for more responsive brightness updates
 
     return off
