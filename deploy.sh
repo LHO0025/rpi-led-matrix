@@ -19,18 +19,6 @@ INSTALL_DIR="$SCRIPT_DIR"
 SERVICE_NAME="led-matrix-system"
 
 
-echo "[3/7] Creating Python virtual environment..."
-cd "$INSTALL_DIR"
-if [ -d "venv" ]; then
-    echo "Virtual environment already exists, skipping..."
-else
-    python3 -m venv venv
-fi
-source venv/bin/activate
-
-echo "[4/7] Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
 
 # Install RGB Matrix library if not already installed
 if ! python3 -c "import rgbmatrix" 2>/dev/null; then
