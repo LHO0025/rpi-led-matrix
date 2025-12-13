@@ -291,6 +291,14 @@ prev_running = False
 
 try:
     print("Press CTRL-C to stop.")
+    print(f"Loaded {len(images)} images")
+    print(f"Display is {'ON' if isRunning else 'OFF'}")
+    
+    # Initial fade-in if display is on
+    if isRunning:
+        print("Performing initial fade-in...")
+        offscreen = fade_in_from_black(matrix, offscreen, current_img)
+        prev_running = True
 
     while True:
         # Check if reload was requested
