@@ -30,6 +30,13 @@ CONFIG_FILE = os.path.join(BASE_DIR, "config.ini")
 AUTH_FILE = os.path.join(BASE_DIR, ".auth")
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
+# Brightness cap (100% UI = 75% hardware to prevent overheating)
+MAX_HARDWARE_BRIGHTNESS = 75
+
+def scale_brightness(ui_value: int) -> int:
+    """Scale UI brightness (1-100) to hardware brightness (1-MAX_HARDWARE_BRIGHTNESS)."""
+    return max(1, int(ui_value * MAX_HARDWARE_BRIGHTNESS / 100))
+
 # JWT Configuration
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', os.urandom(32).hex())
 JWT_EXPIRATION_HOURS = 24
@@ -667,10 +674,12 @@ def set_brightness():
     except ValueError:
         return jsonify({'error': 'Brightness must be an integer'}), 400
 
-    if not send_ctl(f"brightness:{brightness}".encode()):
+    # Scale to hardware brightness (cap at 75% to prevent overheating)
+    hw_brightness = scale_brightness(brightness)
+    if not send_ctl(f"brightness:{hw_brightness}".encode()):
         logger.warning("Could not send brightness command to LED controller")
     
-    save_config(brightness=brightness)
+    save_config(brightness=brightness)  # Save UI value
     
     return jsonify({'message': f'Brightness set to {brightness}', 'brightness': brightness}), 200
 
@@ -725,8 +734,9 @@ def apply_changes():
         try:
             brightness = int(data['brightness'])
             if 1 <= brightness <= 100:
-                send_ctl(f"brightness:{brightness}".encode())
-                save_config(brightness=brightness)
+                hw_brightness = scale_brightness(brightness)
+                send_ctl(f"brightness:{hw_brightness}".encode())
+                save_config(brightness=brightness)  # Save UI value
             else:
                 errors.append("Brightness must be between 1 and 100")
         except (ValueError, TypeError):
@@ -860,7 +870,7 @@ if __name__ == "__main__":
     
     # Set default password if none exists
     if not is_password_set():
-        default_password = "jakipz123"
+        default_password = "hello123"
         save_password_hash(default_password)
         logger.info(f"Default password set: {default_password}")
     

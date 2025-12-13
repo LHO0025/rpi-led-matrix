@@ -494,7 +494,20 @@ try:
         prev_running = now_running
 
         if now_running:
-            # Check if current image is animated GIF
+            # Single image mode: hold indefinitely without transitions
+            if len(images) == 1:
+                current_data = images[0]
+                if is_animated(current_data):
+                    # Play GIF animation indefinitely (use a long hold time, will check for reload)
+                    path, frames, durations = current_data
+                    offscreen, reload_triggered = show_gif(matrix, offscreen, frames, durations, 3600)
+                else:
+                    # Show static image indefinitely (check every few seconds for reload/off)
+                    offscreen, reload_triggered = show_still(matrix, offscreen, current_img, 5)
+                # Don't advance, just continue the loop
+                continue
+            
+            # Multiple images: normal rotation
             current_data = images[idx]
             if is_animated(current_data):
                 # Play GIF animation for hold_seconds
