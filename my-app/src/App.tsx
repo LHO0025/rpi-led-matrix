@@ -274,6 +274,9 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
   // Touch handlers for mobile reordering
   const handleTouchStart = useCallback((e: React.TouchEvent, index: number) => {
     if (!isReorderMode) return
+    
+    // Prevent text selection on mobile
+    e.preventDefault()
 
     const touch = e.touches[0]
     touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
@@ -289,6 +292,11 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!isReorderMode) return
+    
+    // Prevent scrolling while dragging
+    if (draggedIndex !== null) {
+      e.preventDefault()
+    }
 
     // Cancel long press if moved too much
     if (longPressTimerRef.current && touchStartPosRef.current) {
@@ -383,11 +391,13 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
         const orderData = await orderRes.json()
         const newOrder = orderData.order || []
 
+        // Update all state together to avoid hasChanges being true
         setServerOrder(newOrder)
         setServerImages(newOrder)
         setImages(newOrder)
         setServerBrightness(brightness)
         setServerHoldSeconds(holdSeconds)
+        // Clear pending states
         setToBeDeleted([])
         setPendingUploads([])
         setIsReorderMode(false)
@@ -525,6 +535,12 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
                     ${isDragging ? 'opacity-50 scale-95 border-blue-500' : ''}
                     ${isDragOver ? 'border-blue-400 scale-105' : ''}
                     ${isReorderMode && !isPending ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  style={isReorderMode ? { 
+                    WebkitUserSelect: 'none', 
+                    userSelect: 'none',
+                    WebkitTouchCallout: 'none',
+                    touchAction: 'none'
+                  } : undefined}
                   onClick={() => !isReorderMode && toggleDeleteImage(url)}
                 >
                   {isReorderMode && !isPending && (

@@ -304,6 +304,13 @@ def fade_out_to_black(matrix, off, img):
 def fade_in_from_black(matrix, off, img):
     return fade_to_level(matrix, off, img, start_level=0.0, end_level=1.0)
 
+def peek_reload():
+    """Check if reload is requested without resetting the flag."""
+    global reload_requested
+    with reload_lock:
+        return reload_requested
+
+
 def show_still(matrix, off, img, seconds):
     """Display a static image for the specified duration."""
     start = time.time()
@@ -312,8 +319,8 @@ def show_still(matrix, off, img, seconds):
     while time.time() < end:
         if not getIsRunning():
             break
-        if should_reload():
-            # Return early to allow reload processing
+        if peek_reload():
+            # Return early to allow reload processing (don't consume the flag here)
             return off, True
         # Use blit instead of SetImage to avoid PIL issues
         off = blit(matrix, off, img)
@@ -335,7 +342,7 @@ def show_gif(matrix, off, frames, durations, total_seconds):
     while time.time() < end:
         if not getIsRunning():
             break
-        if should_reload():
+        if peek_reload():
             return off, True
         
         # Display current frame
@@ -345,8 +352,10 @@ def show_gif(matrix, off, frames, durations, total_seconds):
         frame_duration = durations[frame_idx] / 1000.0
         frame_start = time.time()
         while time.time() - frame_start < frame_duration:
-            if not getIsRunning() or should_reload():
-                return off, should_reload()
+            if not getIsRunning():
+                return off, False
+            if peek_reload():
+                return off, True
             # Check more frequently for responsiveness
             time.sleep(min(0.05, frame_duration / 2))
         
