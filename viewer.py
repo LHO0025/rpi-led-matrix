@@ -57,6 +57,8 @@ sock.bind(CTRL_SOCK)
 
 # Global hold_seconds that can be updated dynamically
 current_hold_seconds = 30
+reload_requested = False
+reload_lock = threading.Lock()
 
 def get_hold_seconds():
     with hold_seconds_lock:
@@ -68,6 +70,20 @@ def set_hold_seconds(value):
         current_hold_seconds = value
     print(f"Hold seconds updated to {value}")
 
+def request_reload():
+    global reload_requested
+    with reload_lock:
+        reload_requested = True
+    print("Reload requested")
+
+def should_reload():
+    global reload_requested
+    with reload_lock:
+        if reload_requested:
+            reload_requested = False
+            return True
+        return False
+
 def control_thread():
     while True:
         msg, _ = sock.recvfrom(64)
@@ -76,6 +92,8 @@ def control_thread():
             handle_off(None, None)
         elif msg == "on":
             handle_on(None, None)
+        elif msg == "reload":
+            request_reload()
         elif msg.startswith("brightness:"):
             try:
                 value = int(msg.split(":")[1])
@@ -275,6 +293,24 @@ try:
     print("Press CTRL-C to stop.")
 
     while True:
+        # Check if reload was requested
+        if should_reload():
+            print("Reloading images...")
+            # Reload config
+            _, new_hold = load_config()
+            set_hold_seconds(new_hold)
+            # Reload images
+            new_images = load_images(IMAGE_FOLDER, (matrix.width, matrix.height))
+            if new_images:
+                images = new_images
+                idx = 0
+                _, current_img = images[idx]
+                print(f"Reloaded {len(images)} images")
+                # Fade in the first image if display is on
+                if getIsRunning():
+                    offscreen = fade_out_to_black(matrix, offscreen, current_img)
+                    offscreen = fade_in_from_black(matrix, offscreen, current_img)
+
         now_running = getIsRunning()
 
         # OFF transition
@@ -290,8 +326,8 @@ try:
 
         if now_running:
             offscreen = show_still(matrix, offscreen, current_img, get_hold_seconds())
-            # advance only if still on
-            if getIsRunning():
+            # advance only if still on and no reload pending
+            if getIsRunning() and not should_reload():
                 idx = (idx + 1) % len(images)
                 next_path, next_img = images[idx]
                 offscreen = fade_out_to_black(matrix, offscreen, current_img)

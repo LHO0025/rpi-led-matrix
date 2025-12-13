@@ -574,6 +574,70 @@ def set_hold_seconds():
     return jsonify({'message': f'Hold seconds set to {hold_seconds}', 'hold_seconds': hold_seconds}), 200
 
 
+@app.route('/apply_changes', methods=['POST'])
+@cross_origin()
+@token_required
+def apply_changes():
+    """
+    Apply all pending changes at once:
+    - brightness
+    - hold_seconds
+    - deleted images
+    - uploaded images (already on disk)
+    Then send reload command to viewer.
+    """
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+
+    data = request.get_json()
+    errors = []
+    
+    # Apply brightness if provided
+    if 'brightness' in data:
+        try:
+            brightness = int(data['brightness'])
+            if 1 <= brightness <= 100:
+                send_ctl(f"brightness:{brightness}".encode())
+                save_config(brightness=brightness)
+            else:
+                errors.append("Brightness must be between 1 and 100")
+        except (ValueError, TypeError):
+            errors.append("Invalid brightness value")
+    
+    # Apply hold_seconds if provided
+    if 'hold_seconds' in data:
+        try:
+            hold_seconds = int(data['hold_seconds'])
+            if 1 <= hold_seconds <= 3600:
+                send_ctl(f"hold:{hold_seconds}".encode())
+                save_config(hold_seconds=hold_seconds)
+            else:
+                errors.append("hold_seconds must be between 1 and 3600")
+        except (ValueError, TypeError):
+            errors.append("Invalid hold_seconds value")
+    
+    # Delete images if provided
+    deleted = []
+    if 'delete_images' in data and isinstance(data['delete_images'], list):
+        for filename in data['delete_images']:
+            file_path = os.path.join(IMAGE_FOLDER, filename)
+            if os.path.abspath(file_path).startswith(IMAGE_FOLDER) and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    deleted.append(filename)
+                except Exception as e:
+                    errors.append(f"Failed to delete {filename}: {str(e)}")
+    
+    # Send reload command to viewer to reload images and restart display
+    send_ctl(b"reload")
+    
+    return jsonify({
+        'message': 'Changes applied',
+        'deleted': deleted,
+        'errors': errors if errors else None
+    }), 200
+
+
 @app.route("/turn_on", methods=["POST", "GET"])
 @cross_origin()
 @token_required
