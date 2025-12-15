@@ -15,9 +15,10 @@ import configparser
 # Set to 75 to prevent overheating
 MAX_BRIGHTNESS = 75
 
-# CPU affinity: Pin server to core 0, viewer to cores 1-3
+# CPU affinity: Use isolated core 3 for best real-time performance
+# Run setup_isolcpus.sh and reboot to isolate core 3 from the kernel scheduler
 # Set to None to disable CPU affinity
-VIEWER_CPU_CORES = [1, 2, 3]  # Cores for viewer process
+VIEWER_CPU_CORES = [3]  # Use isolated core for viewer (after running setup_isolcpus.sh)
 
 CONFIG_FILE = "config.ini"
 
@@ -295,29 +296,23 @@ def scale_perceptual(img_u8, scale01):
 
 def blit(matrix, off, frame_u8):
     """
-    Blit frame to matrix using pixel-by-pixel method.
-    This avoids PIL version incompatibility with rgbmatrix's SetImage.
+    Blit frame to matrix using SetImage on the matrix directly.
     """
     from PIL import Image as PILImage
     
-    # Convert PIL Image to numpy array if needed
-    if isinstance(frame_u8, PILImage.Image):
-        frame_u8 = np.array(frame_u8)
+    # Convert numpy array to PIL Image if needed
+    if isinstance(frame_u8, np.ndarray):
+        pil_img = PILImage.fromarray(frame_u8, mode="RGB")
+    elif isinstance(frame_u8, PILImage.Image):
+        pil_img = frame_u8
+        if pil_img.mode != "RGB":
+            pil_img = pil_img.convert("RGB")
+    else:
+        pil_img = PILImage.fromarray(np.array(frame_u8, dtype=np.uint8), mode="RGB")
     
-    # Ensure numpy array with correct dtype
-    if not isinstance(frame_u8, np.ndarray):
-        frame_u8 = np.array(frame_u8, dtype=np.uint8)
-    if frame_u8.dtype != np.uint8:
-        frame_u8 = frame_u8.astype(np.uint8)
-    
-    # Use pixel-by-pixel setting (compatible with all PIL versions)
-    height, width = frame_u8.shape[:2]
-    for y in range(height):
-        for x in range(width):
-            r, g, b = frame_u8[y, x]
-            off.SetPixel(x, y, r, g, b)
-    
-    return matrix.SwapOnVSync(off)
+    # Use SetImage on the matrix directly (not on canvas)
+    matrix.SetImage(pil_img)
+    return off
 
 def smoothstep(t):
     # S-curve: slow at start & end, symmetric
