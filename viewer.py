@@ -20,7 +20,12 @@ MAX_BRIGHTNESS = 75
 # Set to None to disable CPU affinity
 VIEWER_CPU_CORES = [3]  # Use isolated core for viewer (after running setup_isolcpus.sh)
 
-CONFIG_FILE = "config.ini"
+# Use /data/matrix for writable storage (allows overlay filesystem protection)
+# Falls back to local paths if /data/matrix doesn't exist
+DATA_DIR = "/data/matrix" if os.path.exists("/data/matrix") else os.path.dirname(os.path.abspath(__file__))
+IMAGE_FOLDER = os.path.join(DATA_DIR, "images" if DATA_DIR == "/data/matrix" else "matrix_images")
+CONFIG_DIR = os.path.join(DATA_DIR, "config" if DATA_DIR == "/data/matrix" else "")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 
 def set_cpu_affinity():
     """Set CPU affinity to specific cores (Linux only)."""
@@ -161,7 +166,6 @@ except (AttributeError, OSError) as e:
 
 
 # ---------- Settings ----------
-IMAGE_FOLDER = "matrix_images"
 BRIGHTNESS, HOLD_SECONDS = load_config()
 current_hold_seconds = HOLD_SECONDS  # Initialize the global variable
 

@@ -24,10 +24,16 @@ logger = logging.getLogger(__name__)
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-IMAGE_FOLDER = os.path.join(BASE_DIR, "matrix_images")
+
+# Use /data/matrix for writable storage (allows overlay filesystem protection)
+# Falls back to local paths if /data/matrix doesn't exist
+DATA_DIR = "/data/matrix" if os.path.exists("/data/matrix") else BASE_DIR
+IMAGE_FOLDER = os.path.join(DATA_DIR, "images" if DATA_DIR == "/data/matrix" else "matrix_images")
+CONFIG_DIR = os.path.join(DATA_DIR, "config" if DATA_DIR == "/data/matrix" else "")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
+AUTH_FILE = os.path.join(CONFIG_DIR, ".auth")
+
 WEB_APP_FOLDER = os.path.join(BASE_DIR, "my-app", "dist")
-CONFIG_FILE = os.path.join(BASE_DIR, "config.ini")
-AUTH_FILE = os.path.join(BASE_DIR, ".auth")
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 # JWT Configuration
@@ -36,6 +42,7 @@ JWT_EXPIRATION_HOURS = 24
 
 # Ensure required directories exist
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
+os.makedirs(CONFIG_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder=WEB_APP_FOLDER, static_url_path='')
 cors = CORS(app)  # allow CORS for all domains on all routes.
@@ -878,10 +885,20 @@ if __name__ == "__main__":
     except (AttributeError, OSError) as e:
         logger.warning(f"Could not set CPU affinity: {e}")
     
+    import sys
+    
     logger.info(f"Starting LED Matrix Server...")
     logger.info(f"Image folder: {IMAGE_FOLDER}")
     logger.info(f"Web app folder: {WEB_APP_FOLDER}")
     logger.info(f"Config file: {CONFIG_FILE}")
+    
+    # Check for --reset-password flag
+    if "--reset-password" in sys.argv:
+        default_password = "hello123"
+        save_password_hash(default_password)
+        logger.info(f"Password reset to: {default_password}")
+        print(f"✓ Password reset to: {default_password}")
+        sys.exit(0)
     
     # Set default password if none exists
     if not is_password_set():
@@ -893,10 +910,18 @@ if __name__ == "__main__":
     config = load_config()
     logger.info(f"Current config: {config}")
     
+    # Log data directory being used
+    logger.info(f"Using data directory: {DATA_DIR}")
+    logger.info(f"Images folder: {IMAGE_FOLDER}")
+    logger.info(f"Config file: {CONFIG_FILE}")
+    
     # Check overlay status
     overlay = is_overlay_enabled()
     if overlay is not None:
         logger.info(f"Overlay filesystem: {'enabled' if overlay else 'disabled'}")
+        if overlay and DATA_DIR == BASE_DIR:
+            logger.warning("⚠ Overlay is enabled but using local directories - uploads may not persist!")
+            logger.warning("⚠ Run setup_writable_data.sh to create /data/matrix for writable storage")
     
     # Run server
     app.run(host="0.0.0.0", port=5000, threaded=True)
