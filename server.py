@@ -611,9 +611,12 @@ def allowed_file(filename):
 def upload_image():
     """
     Upload a new image file.
+    WebP files are automatically converted to PNG for compatibility.
     Note: If overlay filesystem is enabled, this will fail silently.
     Consider disabling overlay before uploading.
     """
+    from PIL import Image
+    
     # Check if any file is in the request
     if 'image' not in request.files:
         return jsonify({'error': 'No file part in request'}), 400
@@ -628,11 +631,25 @@ def upload_image():
 
     # Sanitize filename
     filename = secure_filename(file.filename)
-    save_path = os.path.join(IMAGE_FOLDER, filename)
     
     try:
-        file.save(save_path)
-        logger.info(f"Image uploaded: {filename}")
+        # Check if it's a webp file - convert to PNG
+        if filename.lower().endswith('.webp'):
+            img = Image.open(file)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGBA')
+            else:
+                img = img.convert('RGB')
+            
+            # Change extension to .png
+            filename = filename.rsplit('.', 1)[0] + '.png'
+            save_path = os.path.join(IMAGE_FOLDER, filename)
+            img.save(save_path, 'PNG', optimize=True)
+            logger.info(f"WebP converted to PNG and saved: {filename}")
+        else:
+            save_path = os.path.join(IMAGE_FOLDER, filename)
+            file.save(save_path)
+            logger.info(f"Image uploaded: {filename}")
         
         return jsonify({
             'message': 'File uploaded successfully',

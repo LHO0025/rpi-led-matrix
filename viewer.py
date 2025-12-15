@@ -295,26 +295,28 @@ def scale_perceptual(img_u8, scale01):
 
 def blit(matrix, off, frame_u8):
     """
-    Fast blit using PIL Image.
-    Converts numpy array to PIL Image and uses SetImage for efficiency.
+    Blit frame to matrix using pixel-by-pixel method.
+    This avoids PIL version incompatibility with rgbmatrix's SetImage.
     """
     from PIL import Image as PILImage
     
-    # If already a PIL Image, use directly
+    # Convert PIL Image to numpy array if needed
     if isinstance(frame_u8, PILImage.Image):
-        pil_img = frame_u8
-        if pil_img.mode != "RGB":
-            pil_img = pil_img.convert("RGB")
-    else:
-        # Convert numpy array to PIL Image
-        if not isinstance(frame_u8, np.ndarray):
-            frame_u8 = np.array(frame_u8, dtype=np.uint8)
-        if frame_u8.dtype != np.uint8:
-            frame_u8 = frame_u8.astype(np.uint8)
-        pil_img = PILImage.fromarray(frame_u8, mode="RGB")
+        frame_u8 = np.array(frame_u8)
     
-    # Use SetImage with PIL Image (most efficient method)
-    off.SetImage(pil_img)
+    # Ensure numpy array with correct dtype
+    if not isinstance(frame_u8, np.ndarray):
+        frame_u8 = np.array(frame_u8, dtype=np.uint8)
+    if frame_u8.dtype != np.uint8:
+        frame_u8 = frame_u8.astype(np.uint8)
+    
+    # Use pixel-by-pixel setting (compatible with all PIL versions)
+    height, width = frame_u8.shape[:2]
+    for y in range(height):
+        for x in range(width):
+            r, g, b = frame_u8[y, x]
+            off.SetPixel(x, y, r, g, b)
+    
     return matrix.SwapOnVSync(off)
 
 def smoothstep(t):
