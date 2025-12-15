@@ -30,13 +30,6 @@ CONFIG_FILE = os.path.join(BASE_DIR, "config.ini")
 AUTH_FILE = os.path.join(BASE_DIR, ".auth")
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# Brightness cap (100% UI = 75% hardware to prevent overheating)
-MAX_HARDWARE_BRIGHTNESS = 75
-
-def scale_brightness(ui_value: int) -> int:
-    """Scale UI brightness (1-100) to hardware brightness (1-MAX_HARDWARE_BRIGHTNESS)."""
-    return max(1, int(ui_value * MAX_HARDWARE_BRIGHTNESS / 100))
-
 # JWT Configuration
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', os.urandom(32).hex())
 JWT_EXPIRATION_HOURS = 24
@@ -595,8 +588,8 @@ def set_image_order():
             json.dump(valid_order, f, indent=2)
         logger.info(f"Image order saved: {len(valid_order)} images")
         
-        # Optionally send reload to viewer to pick up new order
-        # send_ctl(b"reload")  # Uncomment if you want immediate order update
+        # Send reload to viewer to pick up new order immediately
+        send_ctl(b"reload")
         
         return jsonify({
             'message': 'Order saved successfully',
@@ -674,12 +667,10 @@ def set_brightness():
     except ValueError:
         return jsonify({'error': 'Brightness must be an integer'}), 400
 
-    # Scale to hardware brightness (cap at 75% to prevent overheating)
-    hw_brightness = scale_brightness(brightness)
-    if not send_ctl(f"brightness:{hw_brightness}".encode()):
+    if not send_ctl(f"brightness:{brightness}".encode()):
         logger.warning("Could not send brightness command to LED controller")
     
-    save_config(brightness=brightness)  # Save UI value
+    save_config(brightness=brightness)
     
     return jsonify({'message': f'Brightness set to {brightness}', 'brightness': brightness}), 200
 
@@ -734,9 +725,8 @@ def apply_changes():
         try:
             brightness = int(data['brightness'])
             if 1 <= brightness <= 100:
-                hw_brightness = scale_brightness(brightness)
-                send_ctl(f"brightness:{hw_brightness}".encode())
-                save_config(brightness=brightness)  # Save UI value
+                send_ctl(f"brightness:{brightness}".encode())
+                save_config(brightness=brightness)
             else:
                 errors.append("Brightness must be between 1 and 100")
         except (ValueError, TypeError):
@@ -863,6 +853,14 @@ def reboot():
 # =============================================================================
 
 if __name__ == "__main__":
+    # Set CPU affinity to core 0 only (leave cores 1-3 for viewer)
+    try:
+        import os
+        os.sched_setaffinity(0, {0})
+        logger.info("Server CPU affinity set to core 0")
+    except (AttributeError, OSError) as e:
+        logger.warning(f"Could not set CPU affinity: {e}")
+    
     logger.info(f"Starting LED Matrix Server...")
     logger.info(f"Image folder: {IMAGE_FOLDER}")
     logger.info(f"Web app folder: {WEB_APP_FOLDER}")

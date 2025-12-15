@@ -7,7 +7,36 @@ import random
 import os, socket, threading
 import configparser
 
+# =============================================================================
+# Configuration Constants
+# =============================================================================
+
+# Maximum hardware brightness (100% UI = MAX_BRIGHTNESS% hardware)
+# Set to 75 to prevent overheating
+MAX_BRIGHTNESS = 75
+
+# CPU affinity: Pin server to core 0, viewer to cores 1-3
+# Set to None to disable CPU affinity
+VIEWER_CPU_CORES = [1, 2, 3]  # Cores for viewer process
+
 CONFIG_FILE = "config.ini"
+
+def set_cpu_affinity():
+    """Set CPU affinity to specific cores (Linux only)."""
+    if VIEWER_CPU_CORES is None:
+        return
+    try:
+        os.sched_setaffinity(0, VIEWER_CPU_CORES)
+        print(f"CPU affinity set to cores: {VIEWER_CPU_CORES}")
+    except (AttributeError, OSError) as e:
+        print(f"Could not set CPU affinity: {e}")
+
+# Set CPU affinity early
+set_cpu_affinity()
+
+def scale_brightness(ui_value: int) -> int:
+    """Scale UI brightness (1-100) to hardware brightness (1-MAX_BRIGHTNESS)."""
+    return max(1, int(ui_value * MAX_BRIGHTNESS / 100))
 
 def load_config():
     brightness = 75  # defaults from script
@@ -120,6 +149,14 @@ threading.Thread(target=control_thread, daemon=True).start()
 
 
 print("Starting viewer...")
+
+# Set CPU affinity to cores 1-3 (leave core 0 for server)
+try:
+    import os as os_affinity
+    os_affinity.sched_setaffinity(0, {1, 2, 3})
+    print("Viewer CPU affinity set to cores 1-3")
+except (AttributeError, OSError) as e:
+    print(f"Could not set CPU affinity: {e}")
 
 
 # ---------- Settings ----------
@@ -257,22 +294,27 @@ def scale_perceptual(img_u8, scale01):
     return _TO_GAMMA[out.astype(np.uint8)]
 
 def blit(matrix, off, frame_u8):
-    import numpy as np
+    """
+    Fast blit using PIL Image.
+    Converts numpy array to PIL Image and uses SetImage for efficiency.
+    """
     from PIL import Image as PILImage
-    # If frame_u8 is a PIL.Image.Image, convert to numpy array
+    
+    # If already a PIL Image, use directly
     if isinstance(frame_u8, PILImage.Image):
-        frame_u8 = np.array(frame_u8)
-    # Ensure frame_u8 is uint8 numpy array
-    if not (isinstance(frame_u8, np.ndarray) and frame_u8.dtype == np.uint8):
-        frame_u8 = np.array(frame_u8, dtype=np.uint8)
+        pil_img = frame_u8
+        if pil_img.mode != "RGB":
+            pil_img = pil_img.convert("RGB")
+    else:
+        # Convert numpy array to PIL Image
+        if not isinstance(frame_u8, np.ndarray):
+            frame_u8 = np.array(frame_u8, dtype=np.uint8)
+        if frame_u8.dtype != np.uint8:
+            frame_u8 = frame_u8.astype(np.uint8)
+        pil_img = PILImage.fromarray(frame_u8, mode="RGB")
     
-    # Use pixel-by-pixel setting instead of SetImage to avoid PIL version issues
-    height, width = frame_u8.shape[:2]
-    for y in range(height):
-        for x in range(width):
-            r, g, b = frame_u8[y, x]
-            off.SetPixel(x, y, r, g, b)
-    
+    # Use SetImage with PIL Image (most efficient method)
+    off.SetImage(pil_img)
     return matrix.SwapOnVSync(off)
 
 def smoothstep(t):
@@ -390,7 +432,7 @@ options.cols = 64
 options.chain_length = 1
 options.parallel = 1
 options.hardware_mapping = 'regular'
-options.brightness = BRIGHTNESS
+options.brightness = scale_brightness(BRIGHTNESS)  # Scale initial brightness
 
 options.pwm_bits = 8            
 options.pwm_lsb_nanoseconds = 130 
@@ -427,9 +469,11 @@ last_brightness_update = 0
 BRIGHTNESS_RATE_LIMIT_S = 0.2  # 200 ms
 
 def handle_set_brightness(value):
+    """Set brightness with scaling (100% UI = MAX_BRIGHTNESS% hardware)."""
     if 1 <= value <= 100:
-        matrix.brightness = value
-        print(f"Set brightness to {value}")
+        hw_brightness = scale_brightness(value)
+        matrix.brightness = hw_brightness
+        print(f"Set brightness to {value}% (hardware: {hw_brightness}%)")
     else:
         print(f"Invalid brightness value: {value} (must be 1–100)")
 
