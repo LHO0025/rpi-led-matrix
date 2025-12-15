@@ -1,110 +1,171 @@
 #!/bin/bash
+set -euo pipefail
 
-# Setup script to create a writable data partition for LED matrix uploads
-# This allows the system to run with overlay filesystem protection while
-# still accepting real-time uploads and config changes.
+# Persistent /data setup for LED matrix (overlay-safe OS + writable persistent data)
+# Usage:
+#   sudo ./setup_persistent_data.sh /dev/sda1
+#   sudo ./setup_persistent_data.sh /dev/mmcblk0p3
+# Optional:
+#   sudo ./setup_persistent_data.sh /dev/sda1 --format   # DANGEROUS: formats the partition as ext4
 
-set -e
+USER_NAME="pi"
+GROUP_NAME="pi"
+MOUNT_POINT="/data"
+DATA_DIR="/data/matrix"
+
+DEVICE="${1:-}"
+DO_FORMAT="${2:-}"
+
+if [[ -z "$DEVICE" ]]; then
+  echo "Usage: sudo $0 <block-device-partition> [--format]"
+  echo "Examples:"
+  echo "  sudo $0 /dev/sda1"
+  echo "  sudo $0 /dev/mmcblk0p3"
+  exit 1
+fi
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run as root (use sudo)."
+  exit 1
+fi
+
+if [[ ! -b "$DEVICE" ]]; then
+  echo "ERROR: $DEVICE is not a block device."
+  echo "Tip: run 'lsblk -f' to find the right partition (e.g. /dev/sda1, /dev/mmcblk0p3)."
+  exit 1
+fi
 
 echo "==================================================================="
-echo "LED Matrix - Writable Data Partition Setup"
+echo "Persistent /data setup"
 echo "==================================================================="
+echo "Device:      $DEVICE"
+echo "Mount point: $MOUNT_POINT"
+echo "Matrix dir:  $DATA_DIR"
 echo ""
-echo "This script will:"
-echo "1. Create a writable directory at /data/matrix"
-echo "2. Move existing images and config to /data/matrix"
-echo "3. Update server.py paths to use /data/matrix"
-echo "4. Set up proper permissions"
-echo "5. Enable overlay filesystem for system protection"
-echo ""
-read -p "Continue? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+
+if [[ "$DO_FORMAT" == "--format" ]]; then
+  echo "WARNING: You asked to FORMAT $DEVICE as ext4. This will ERASE all data on it."
+  read -p "Type EXACTLY 'FORMAT' to continue: " confirm
+  if [[ "$confirm" != "FORMAT" ]]; then
     echo "Aborted."
     exit 1
-fi
+  fi
 
-# 1. Create writable data directory
-echo ""
-echo "Creating /data/matrix directory..."
-sudo mkdir -p /data/matrix
-sudo mkdir -p /data/matrix/images
-sudo mkdir -p /data/matrix/config
-
-# 2. Move existing data
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo ""
-echo "Moving existing images..."
-if [ -d "$SCRIPT_DIR/matrix_images" ]; then
-    sudo cp -r "$SCRIPT_DIR/matrix_images"/* /data/matrix/images/ 2>/dev/null || true
-    echo "Images copied from $SCRIPT_DIR/matrix_images"
-fi
-
-echo "Moving config files..."
-if [ -f "$SCRIPT_DIR/config.ini" ]; then
-    sudo cp "$SCRIPT_DIR/config.ini" /data/matrix/config/
-    echo "config.ini copied"
-fi
-
-if [ -f "$SCRIPT_DIR/.auth" ]; then
-    sudo cp "$SCRIPT_DIR/.auth" /data/matrix/config/
-    echo ".auth copied"
-fi
-
-# 3. Set permissions (allow pi user to write)
-echo ""
-echo "Setting permissions..."
-sudo chown -R pi:pi /data/matrix
-sudo chmod -R 755 /data/matrix
-
-# 4. Create order.txt if it doesn't exist
-if [ ! -f "/data/matrix/images/order.txt" ]; then
-    echo "Creating order.txt..."
-    ls /data/matrix/images/*.{png,jpg,jpeg,gif} 2>/dev/null | xargs -n 1 basename > /tmp/order.txt || true
-    sudo mv /tmp/order.txt /data/matrix/images/order.txt
-    sudo chown pi:pi /data/matrix/images/order.txt
-fi
-
-# 5. Add /data to fstab for explicit write mounting (if not already there)
-echo ""
-echo "Checking /etc/fstab..."
-if ! grep -q "/data" /etc/fstab; then
-    echo "Adding /data mount to /etc/fstab..."
-    echo "tmpfs /data tmpfs defaults,noatime,mode=1777 0 0" | sudo tee -a /etc/fstab
-    echo "Note: /data is mounted as tmpfs (RAM). For persistent storage across reboots,"
-    echo "      you may want to use a separate partition or USB drive instead."
+  echo "Formatting $DEVICE as ext4..."
+  mkfs.ext4 -F "$DEVICE"
 else
-    echo "/data already in /etc/fstab"
+  echo "No formatting will be performed."
 fi
 
-# 6. Mount /data
-echo ""
-echo "Mounting /data..."
-sudo mount -a 2>/dev/null || true
+# Ensure mount point exists
+mkdir -p "$MOUNT_POINT"
 
-# Re-copy data after mount (in case /data was just mounted)
-sudo mkdir -p /data/matrix/images /data/matrix/config
-if [ -d "$SCRIPT_DIR/matrix_images" ]; then
-    sudo cp -r "$SCRIPT_DIR/matrix_images"/* /data/matrix/images/ 2>/dev/null || true
+# Remove tmpfs /data entry if present
+if grep -qE '^[^#].*\s+/data\s+tmpfs\s+' /etc/fstab; then
+  echo "Removing tmpfs /data entry from /etc/fstab..."
+  cp /etc/fstab "/etc/fstab.bak.$(date +%Y%m%d%H%M%S)"
+  # Comment out any active tmpfs line mounting /data
+  sed -i -E 's@^([^#].*\s+/data\s+tmpfs\s+.*)$@# \1@' /etc/fstab
 fi
-if [ -f "$SCRIPT_DIR/config.ini" ]; then
-    sudo cp "$SCRIPT_DIR/config.ini" /data/matrix/config/
+
+# Get UUID for stable fstab entry
+UUID="$(blkid -s UUID -o value "$DEVICE" || true)"
+FSTYPE="$(blkid -s TYPE -o value "$DEVICE" || true)"
+
+if [[ -z "$UUID" || -z "$FSTYPE" ]]; then
+  echo "ERROR: Could not read UUID/TYPE from $DEVICE."
+  echo "If it has no filesystem, rerun with --format, or format it manually."
+  exit 1
 fi
-if [ -f "$SCRIPT_DIR/.auth" ]; then
-    sudo cp "$SCRIPT_DIR/.auth" /data/matrix/config/
+
+echo "Detected filesystem: $FSTYPE"
+echo "Detected UUID:       $UUID"
+
+if [[ "$FSTYPE" != "ext4" ]]; then
+  echo "NOTE: This script expects ext4 for best results."
+  echo "      Current type is '$FSTYPE'. It may still work, but ext4 is recommended."
 fi
-sudo chown -R pi:pi /data/matrix
-sudo chmod -R 755 /data/matrix
+
+# Add fstab entry if not already present
+if grep -qE "UUID=$UUID\s+$MOUNT_POINT\s+" /etc/fstab; then
+  echo "/etc/fstab already contains an entry for UUID=$UUID at $MOUNT_POINT"
+else
+  echo "Adding persistent mount to /etc/fstab..."
+  cp /etc/fstab "/etc/fstab.bak.$(date +%Y%m%d%H%M%S)"
+  # noatime reduces writes; defaults keeps it simple; add 'nofail' if you use USB and want boot to continue if missing
+  echo "UUID=$UUID  $MOUNT_POINT  $FSTYPE  defaults,noatime  0  2" >> /etc/fstab
+fi
+
+# Mount it now (unmount if currently something else)
+if mountpoint -q "$MOUNT_POINT"; then
+  echo "$MOUNT_POINT is currently mounted. Ensuring it's the correct device..."
+  CURRENT_SRC="$(findmnt -n -o SOURCE --target "$MOUNT_POINT" || true)"
+  if [[ "$CURRENT_SRC" != "$DEVICE" && "$CURRENT_SRC" != "UUID=$UUID" ]]; then
+    echo "Unmounting current $MOUNT_POINT mount ($CURRENT_SRC)..."
+    umount "$MOUNT_POINT"
+  fi
+fi
+
+echo "Mounting $MOUNT_POINT..."
+mount "$MOUNT_POINT"
+
+# Verify it is a real disk mount (not tmpfs)
+MNT_FSTYPE="$(findmnt -n -o FSTYPE --target "$MOUNT_POINT" || true)"
+if [[ "$MNT_FSTYPE" == "tmpfs" ]]; then
+  echo "ERROR: $MOUNT_POINT is still tmpfs. Check /etc/fstab for leftover tmpfs entries."
+  exit 1
+fi
+
+echo "Mounted $MOUNT_POINT as: $MNT_FSTYPE"
+
+# Create matrix directories
+mkdir -p "$DATA_DIR/images" "$DATA_DIR/config"
+
+# Copy existing data from script directory (if present)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Copying existing images/config if found..."
+if [[ -d "$SCRIPT_DIR/matrix_images" ]]; then
+  cp -r "$SCRIPT_DIR/matrix_images"/. "$DATA_DIR/images/" 2>/dev/null || true
+  echo "  Copied images from $SCRIPT_DIR/matrix_images"
+fi
+
+if [[ -f "$SCRIPT_DIR/config.ini" ]]; then
+  cp "$SCRIPT_DIR/config.ini" "$DATA_DIR/config/"
+  echo "  Copied config.ini"
+fi
+
+if [[ -f "$SCRIPT_DIR/.auth" ]]; then
+  cp "$SCRIPT_DIR/.auth" "$DATA_DIR/config/"
+  echo "  Copied .auth"
+fi
+
+# Create order.txt if missing
+if [[ ! -f "$DATA_DIR/images/order.txt" ]]; then
+  echo "Creating order.txt..."
+  (ls "$DATA_DIR"/images/*.{png,jpg,jpeg,gif} 2>/dev/null | xargs -n 1 basename) > /tmp/order.txt || true
+  mv /tmp/order.txt "$DATA_DIR/images/order.txt"
+fi
+
+# Permissions
+chown -R "$USER_NAME:$GROUP_NAME" "$DATA_DIR"
+chmod -R 755 "$DATA_DIR"
 
 echo ""
 echo "==================================================================="
-echo "Setup complete!"
+echo "Done."
 echo "==================================================================="
+echo "Persistent data is now at: $DATA_DIR"
 echo ""
 echo "Next steps:"
-echo "1. Update server.py to use /data/matrix paths (or run the update script)"
-echo "2. Enable overlay filesystem: sudo raspi-config nonint do_overlayfs 0"
-echo "3. Reboot: sudo reboot"
+echo "1) Update your server.py to use:"
+echo "   Images: $DATA_DIR/images"
+echo "   Config: $DATA_DIR/config"
+echo "2) Enable overlay for the OS if you want (root protection):"
+echo "   sudo raspi-config nonint do_overlayfs 0"
+echo "3) Reboot:"
+echo "   sudo reboot"
 echo ""
-echo "After reboot, your system will be protected but uploads will still work!"
-echo ""
+echo "Tip: verify after reboot:"
+echo "  mount | grep ' /data '"
+echo "  ls -la $DATA_DIR"
