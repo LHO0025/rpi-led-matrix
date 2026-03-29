@@ -461,19 +461,22 @@ offscreen = matrix.CreateFrameCanvas()
 # current_data: decoded pixel data for the currently-displayed image (loaded on demand)
 # current_img: the first frame (numpy array) of current_data, used for fade transitions
 current_paths = get_sorted_image_paths(IMAGE_FOLDER)
-if not current_paths:
-    sys.exit("No image files found in " + IMAGE_FOLDER)
-
+current_data_pixels = None
+current_durations = None
+current_img = None
 idx = 0
-result = load_single_image(current_paths[idx], (matrix.width, matrix.height))
-while result is None and idx < len(current_paths) - 1:
-    idx += 1
-    result = load_single_image(current_paths[idx], (matrix.width, matrix.height))
-if result is None:
-    sys.exit("No valid images could be loaded")
 
-current_data_pixels, current_durations = result
-current_img = current_data_pixels[0] if current_durations is not None else current_data_pixels
+# Try to load the first valid image (may be empty on first boot)
+for i, p in enumerate(current_paths):
+    result = load_single_image(p, (matrix.width, matrix.height))
+    if result is not None:
+        current_data_pixels, current_durations = result
+        current_img = current_data_pixels[0] if current_durations is not None else current_data_pixels
+        idx = i
+        break
+
+if current_img is None:
+    print(f"No images found in {IMAGE_FOLDER} — waiting for uploads via web UI...")
 
 prev_running = False
 
@@ -482,12 +485,33 @@ try:
     print(f"Found {len(current_paths)} images")
     print(f"Display is {'ON' if isRunning else 'OFF'}")
 
-    if isRunning:
+    if isRunning and current_img is not None:
         print("Performing initial fade-in...")
         offscreen = fade_in_from_black(matrix, offscreen, current_img)
         prev_running = True
 
     while True:
+        # No images — wait for reload signal
+        if current_img is None:
+            if should_reload():
+                new_paths = get_sorted_image_paths(IMAGE_FOLDER)
+                if new_paths:
+                    for i, p in enumerate(new_paths):
+                        result = load_single_image(p, (matrix.width, matrix.height))
+                        if result is not None:
+                            current_paths = new_paths
+                            current_data_pixels, current_durations = result
+                            current_img = current_data_pixels[0] if current_durations is not None else current_data_pixels
+                            idx = i
+                            print(f"Loaded {len(current_paths)} images")
+                            if getIsRunning():
+                                offscreen = fade_in_from_black(matrix, offscreen, current_img)
+                                prev_running = True
+                            break
+            else:
+                time.sleep(0.5)
+            continue
+
         # Handle reload
         if should_reload():
             print("Reloading images...")
