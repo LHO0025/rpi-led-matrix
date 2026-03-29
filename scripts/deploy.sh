@@ -42,13 +42,13 @@ cd "$PROJECT_ROOT"
 python3 -m venv --system-site-packages "$PROJECT_ROOT/venv"
 "$PROJECT_ROOT/venv/bin/pip" install -r requirements.txt
 
-echo "[3/6] Building web application..."
-if [ -d "$PROJECT_ROOT/frontend" ]; then
-    cd "$PROJECT_ROOT/frontend"
-    npm install
-    npm run build
-    cd "$PROJECT_ROOT"
+echo "[3/6] Checking web application..."
+if [ ! -d "$PROJECT_ROOT/frontend/dist" ]; then
+    echo "ERROR: frontend/dist/ not found. Build the frontend on your dev machine first:"
+    echo "  cd frontend && npm install && npm run build"
+    exit 1
 fi
+echo "Frontend build found."
 
 echo "[4/6] Setting up configuration..."
 # Create default config
