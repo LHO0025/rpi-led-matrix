@@ -40,7 +40,7 @@ mkdir -p "$PROJECT_ROOT/matrix_images"
 
 echo "Starting LED Matrix Viewer..."
 pkill -f "python3.*viewer.py" || true
-python3 "$PROJECT_ROOT/backend/viewer.py" > /var/log/led-matrix-viewer.log 2>&1 &
+"$PROJECT_ROOT/venv/bin/python3" "$PROJECT_ROOT/backend/viewer.py" > /var/log/led-matrix-viewer.log 2>&1 &
 VIEWER_PID=$!
 echo $VIEWER_PID > /tmp/led-matrix-viewer.pid
 sleep 2
@@ -53,7 +53,7 @@ fi
 
 echo "Starting Web Server..."
 pkill -f "python3.*server.py" || true
-python3 "$PROJECT_ROOT/backend/server.py" > /var/log/led-matrix-server.log 2>&1 &
+"$PROJECT_ROOT/venv/bin/python3" "$PROJECT_ROOT/backend/server.py" > /var/log/led-matrix-server.log 2>&1 &
 SERVER_PID=$!
 echo $SERVER_PID > /tmp/led-matrix-server.pid
 sleep 2

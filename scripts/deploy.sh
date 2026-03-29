@@ -39,7 +39,8 @@ fi
 
 echo "[2/6] Installing Python dependencies..."
 cd "$PROJECT_ROOT"
-pip3 install -r requirements.txt
+python3 -m venv --system-site-packages "$PROJECT_ROOT/venv"
+"$PROJECT_ROOT/venv/bin/pip" install -r requirements.txt
 
 echo "[3/6] Building web application..."
 if [ -d "$PROJECT_ROOT/frontend" ]; then
