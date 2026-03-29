@@ -606,7 +606,7 @@ def serve_thumbnail(filename):
             src_mtime = os.path.getmtime(file_path)
             thumb_mtime = os.path.getmtime(thumb_path)
             if thumb_mtime >= src_mtime:
-                return send_file(thumb_path, mimetype='image/png', max_age=86400)
+                return send_file(thumb_path, mimetype='image/png', max_age=3600)
 
         # Generate thumbnail
         with Image.open(file_path) as img:
@@ -615,7 +615,7 @@ def serve_thumbnail(filename):
                 img = img.convert('RGBA')
             img.save(thumb_path, format='PNG', optimize=True)
 
-        return send_file(thumb_path, mimetype='image/png', max_age=86400)
+        return send_file(thumb_path, mimetype='image/png', max_age=3600)
     except Exception as e:
         logger.error(f"Failed to generate thumbnail for '{filename}': {e}")
         # Return a 1x1 transparent pixel on error
