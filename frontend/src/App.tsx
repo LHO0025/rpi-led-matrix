@@ -385,16 +385,13 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
 
         const orderToSave = [...finalOrder, ...uploadedNames]
 
-        await fetch(`${SERVER_URL}/images/order`, {
+        const orderRes = await fetch(`${SERVER_URL}/images/order`, {
           method: "POST",
           headers: authHeaders,
           body: JSON.stringify({ order: orderToSave })
         })
-
-        // Refresh state from server
-        const orderRes = await fetch(`${SERVER_URL}/images/order`)
         const orderData = await orderRes.json()
-        const newOrder = orderData.order || []
+        const newOrder = orderData.order || orderToSave
 
         setServerOrder(newOrder)
         setServerImages(newOrder)
@@ -523,7 +520,7 @@ function MainApp({ token, onLogout }: { token: string, onLogout: () => void }) {
           </Button>
           {isReorderMode && (
             <span className="text-sm text-gray-400">
-              Drag images to reorder
+              Use arrows to reorder
             </span>
           )}
           {orderChanged && !isReorderMode && (
