@@ -11,29 +11,56 @@ echo -e "${YELLOW}Stopping LED Matrix System${NC}"
 
 STOPPED=0
 
-# Stop viewer
-if [ -f /tmp/led-matrix-viewer.pid ]; then
-    VIEWER_PID=$(cat /tmp/led-matrix-viewer.pid)
-    if kill -0 $VIEWER_PID 2>/dev/null; then
-        kill $VIEWER_PID
-        STOPPED=1
+# Helper: stop a process by PID file with graceful timeout
+stop_by_pid() {
+    local pid_file="$1"
+    local name="$2"
+
+    if [ ! -f "$pid_file" ]; then
+        return 1
     fi
-    rm -f /tmp/led-matrix-viewer.pid
+
+    local pid
+    pid=$(cat "$pid_file")
+    rm -f "$pid_file"
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+        return 1
+    fi
+
+    echo "Stopping $name (PID $pid)..."
+    kill -TERM "$pid" 2>/dev/null
+
+    # Wait up to 5 seconds for graceful shutdown
+    for i in {1..10}; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    # Force kill if still running
+    echo "Force-killing $name (PID $pid)..."
+    kill -KILL "$pid" 2>/dev/null
+    return 0
+}
+
+# Stop viewer
+if stop_by_pid /tmp/led-matrix-viewer.pid "viewer"; then
+    STOPPED=1
 fi
 
 # Stop server
-if [ -f /tmp/led-matrix-server.pid ]; then
-    SERVER_PID=$(cat /tmp/led-matrix-server.pid)
-    if kill -0 $SERVER_PID 2>/dev/null; then
-        kill $SERVER_PID
-        STOPPED=1
-    fi
-    rm -f /tmp/led-matrix-server.pid
+if stop_by_pid /tmp/led-matrix-server.pid "server"; then
+    STOPPED=1
 fi
 
-# Kill any remaining processes
-pkill -f viewer.py && STOPPED=1
-pkill -f server.py && STOPPED=1
+# Kill any remaining processes by name
+pkill -f "python3.*viewer.py" 2>/dev/null && STOPPED=1
+pkill -f "python3.*server.py" 2>/dev/null && STOPPED=1
+
+# Clean up socket
+rm -f /tmp/ledctl.sock
 
 if [ $STOPPED -eq 1 ]; then
     echo -e "${GREEN}System stopped${NC}"

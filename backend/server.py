@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, send_from_directory, request
 import os
+import sys
 import subprocess
 import logging
 from flask_cors import CORS, cross_origin
@@ -7,13 +8,23 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import socket
 import configparser
+import threading
+import time
+import re
 import jwt
 from datetime import datetime, timedelta
 from functools import wraps
 from dotenv import load_dotenv
 
+from config import (
+    PROJECT_ROOT, DATA_DIR, IMAGE_FOLDER, CONFIG_DIR,
+    CONFIG_FILE, AUTH_FILE, ORDER_FILE, CTRL_SOCK,
+    ensure_directories,
+)
+
 # Load environment variables from project root
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+_env_path = os.path.join(PROJECT_ROOT, '.env')
+load_dotenv(_env_path)
 
 # Configure logging
 logging.basicConfig(
@@ -22,42 +33,45 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-
-# Use /data/matrix for writable storage (allows overlay filesystem protection)
-# Falls back to local paths if /data/matrix doesn't exist
-DATA_DIR = "/data/matrix" if os.path.exists("/data/matrix") else PROJECT_ROOT
-IMAGE_FOLDER = os.path.join(DATA_DIR, "images" if DATA_DIR == "/data/matrix" else "matrix_images")
-CONFIG_DIR = os.path.join(DATA_DIR, "config" if DATA_DIR == "/data/matrix" else "")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
-AUTH_FILE = os.path.join(CONFIG_DIR, ".auth")
-
 WEB_APP_FOLDER = os.path.join(PROJECT_ROOT, "frontend", "dist")
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 # JWT Configuration
-JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', os.urandom(32).hex())
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+if not JWT_SECRET_KEY:
+    logger.warning(
+        "JWT_SECRET_KEY not found in environment. "
+        "Tokens will be invalidated on every restart. "
+        "Run scripts/deploy.sh or create a .env file with JWT_SECRET_KEY."
+    )
+    JWT_SECRET_KEY = os.urandom(32).hex()
 JWT_EXPIRATION_HOURS = 24
 
-# Ensure required directories exist
-os.makedirs(IMAGE_FOLDER, exist_ok=True)
-os.makedirs(CONFIG_DIR, exist_ok=True)
+# Ensure required directories exist and are writable
+try:
+    ensure_directories()
+except RuntimeError as e:
+    logger.error(str(e))
+    sys.exit(1)
 
+# 4MB max upload — images are displayed on a 64x64 matrix, anything larger is wasteful
 app = Flask(__name__, static_folder=WEB_APP_FOLDER, static_url_path='')
-cors = CORS(app)  # allow CORS for all domains on all routes.
+cors = CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
+app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024
+
+# Thumbnail cache directory
+THUMB_DIR = os.path.join(IMAGE_FOLDER, ".thumbs")
+os.makedirs(THUMB_DIR, exist_ok=True)
 
 
 def send_ctl(cmd: bytes):
-    """Send command to LED control socket."""
+    """Send command to LED control socket. Returns True on success."""
     try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        s.connect("/tmp/ledctl.sock")
-        s.send(cmd)
-        s.close()
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.settimeout(2.0)
+            s.connect(CTRL_SOCK)
+            s.send(cmd)
         logger.info(f"Sent control command: {cmd.decode()}")
         return True
     except socket.error as e:
@@ -72,7 +86,7 @@ def load_config():
         "brightness": 50,
         "hold_seconds": 20
     }
-    
+
     if os.path.isfile(CONFIG_FILE):
         config.read(CONFIG_FILE)
         if "display" in config:
@@ -99,9 +113,125 @@ def save_config(brightness=None, hold_seconds=None):
     if hold_seconds is not None:
         config["display"]["hold_seconds"] = str(hold_seconds)
 
-    with open(CONFIG_FILE, "w") as f:
-        config.write(f)
-    logger.info(f"Config saved: brightness={brightness}, hold_seconds={hold_seconds}")
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            config.write(f)
+        logger.info(f"Config saved: brightness={brightness}, hold_seconds={hold_seconds}")
+    except OSError as e:
+        logger.error(f"Failed to save config: {e}")
+
+
+# =============================================================================
+# Schedule Functions
+# =============================================================================
+
+_TIME_RE = re.compile(r'^([01]\d|2[0-3]):([0-5]\d)$')
+
+# Scheduler state — updated by API, read by scheduler thread
+_schedule_lock = threading.Lock()
+_schedule = {"enabled": False, "on_time": "08:00", "off_time": "23:00"}
+
+
+def load_schedule():
+    """Load schedule from config file."""
+    config = configparser.ConfigParser()
+    if os.path.isfile(CONFIG_FILE):
+        config.read(CONFIG_FILE)
+    result = {
+        "enabled": config.getboolean("schedule", "enabled", fallback=False),
+        "on_time": config.get("schedule", "on_time", fallback="08:00"),
+        "off_time": config.get("schedule", "off_time", fallback="23:00"),
+    }
+    with _schedule_lock:
+        _schedule.update(result)
+    return result
+
+
+def save_schedule(enabled=None, on_time=None, off_time=None):
+    """Save schedule to config file and update running scheduler."""
+    config = configparser.ConfigParser()
+    if os.path.isfile(CONFIG_FILE):
+        config.read(CONFIG_FILE)
+
+    if "schedule" not in config:
+        config["schedule"] = {}
+
+    if enabled is not None:
+        config["schedule"]["enabled"] = str(enabled).lower()
+    if on_time is not None:
+        config["schedule"]["on_time"] = on_time
+    if off_time is not None:
+        config["schedule"]["off_time"] = off_time
+
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            config.write(f)
+    except OSError as e:
+        logger.error(f"Failed to save schedule: {e}")
+        return
+
+    # Update in-memory schedule for the running thread
+    with _schedule_lock:
+        if enabled is not None:
+            _schedule["enabled"] = enabled
+        if on_time is not None:
+            _schedule["on_time"] = on_time
+        if off_time is not None:
+            _schedule["off_time"] = off_time
+
+    logger.info(f"Schedule saved: enabled={enabled}, on={on_time}, off={off_time}")
+
+
+def _time_to_minutes(t: str) -> int:
+    """Convert HH:MM to minutes since midnight."""
+    h, m = t.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _should_be_on(now_minutes: int, on_minutes: int, off_minutes: int) -> bool:
+    """Determine if display should be on, handling overnight schedules."""
+    if on_minutes < off_minutes:
+        # Normal: e.g., on=08:00, off=23:00
+        return on_minutes <= now_minutes < off_minutes
+    elif on_minutes > off_minutes:
+        # Overnight: e.g., on=22:00, off=06:00
+        return now_minutes >= on_minutes or now_minutes < off_minutes
+    else:
+        # on == off means always on
+        return True
+
+
+def schedule_thread():
+    """Background thread that sends on/off commands based on schedule."""
+    last_action = None
+
+    while True:
+        time.sleep(30)
+        try:
+            with _schedule_lock:
+                enabled = _schedule["enabled"]
+                on_time = _schedule["on_time"]
+                off_time = _schedule["off_time"]
+
+            if not enabled:
+                last_action = None
+                continue
+
+            now = datetime.now()
+            now_minutes = now.hour * 60 + now.minute
+            on_minutes = _time_to_minutes(on_time)
+            off_minutes = _time_to_minutes(off_time)
+
+            should_on = _should_be_on(now_minutes, on_minutes, off_minutes)
+            action = "on" if should_on else "off"
+
+            if action != last_action:
+                send_ctl(action.encode())
+                logger.info(f"Schedule: sent '{action}' (now={now.strftime('%H:%M')}, on={on_time}, off={off_time})")
+                last_action = action
+
+        except Exception as e:
+            logger.error(f"Schedule thread error: {e}")
 
 
 # =============================================================================
@@ -114,18 +244,19 @@ def load_password_hash():
         try:
             with open(AUTH_FILE, 'r') as f:
                 return f.read().strip()
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Failed to load password hash: {e}")
     return None
 
 
 def save_password_hash(password: str):
-    """Save a new password hash."""
+    """Save a new password hash with secure permissions."""
     try:
         hash_val = generate_password_hash(password)
-        with open(AUTH_FILE, 'w') as f:
+        # Use os.open with explicit mode to avoid permission race
+        fd = os.open(AUTH_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
             f.write(hash_val)
-        os.chmod(AUTH_FILE, 0o600)  # Secure file permissions
         logger.info("Password hash saved successfully")
         return True
     except Exception as e:
@@ -169,24 +300,24 @@ def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
-        
-        # Check for token in Authorization header
+
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
-            try:
-                token = auth_header.split(' ')[1]  # Bearer <token>
-            except IndexError:
+            parts = auth_header.split(' ')
+            if len(parts) == 2 and parts[0] == 'Bearer':
+                token = parts[1]
+            else:
                 return jsonify({'error': 'Invalid token format'}), 401
-        
+
         if not token:
             return jsonify({'error': 'Authentication required'}), 401
-        
+
         payload = verify_token(token)
         if not payload:
             return jsonify({'error': 'Invalid or expired token'}), 401
-        
+
         return f(*args, **kwargs)
-    
+
     return decorated
 
 
@@ -206,7 +337,6 @@ def is_overlay_enabled():
             ["sudo", "raspi-config", "nonint", "get_overlay_now"],
             capture_output=True, text=True, timeout=10
         )
-        # Returns 0 if overlay is enabled, 1 if disabled
         return result.stdout.strip() == "0"
     except Exception as e:
         logger.error(f"Failed to check overlay status: {e}")
@@ -214,19 +344,15 @@ def is_overlay_enabled():
 
 
 def set_overlay(enable: bool):
-    """
-    Enable or disable the overlay filesystem.
-    Note: Changes require a reboot to take effect.
-    """
+    """Enable or disable the overlay filesystem. Changes require a reboot."""
     try:
-        # Set overlay configuration
         overlay_cmd = ["sudo", "raspi-config", "nonint", "do_overlayfs", "0" if enable else "1"]
         result = subprocess.run(overlay_cmd, capture_output=True, text=True, timeout=30)
-        
+
         if result.returncode != 0:
             logger.error(f"Failed to set overlay: {result.stderr}")
             return False, result.stderr
-        
+
         logger.info(f"Overlay filesystem {'enabled' if enable else 'disabled'} (reboot required)")
         return True, "Reboot required for changes to take effect"
     except subprocess.TimeoutExpired:
@@ -265,16 +391,16 @@ def serve_index():
 def auth_status():
     """Check if password is set and if provided token is valid."""
     password_is_set = is_password_set()
-    
-    # Check if token is provided and valid
+
     token_valid = False
     if 'Authorization' in request.headers:
         try:
-            token = request.headers['Authorization'].split(' ')[1]
-            token_valid = verify_token(token) is not None
-        except:
+            parts = request.headers['Authorization'].split(' ')
+            if len(parts) == 2:
+                token_valid = verify_token(parts[1]) is not None
+        except (IndexError, ValueError):
             pass
-    
+
     return jsonify({
         "password_set": password_is_set,
         "authenticated": token_valid
@@ -287,23 +413,23 @@ def setup_password():
     """Set up initial password (only works if no password exists)."""
     if is_password_set():
         return jsonify({"error": "Password already set"}), 400
-    
+
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
-    
+
     data = request.get_json()
     password = data.get('password')
-    
+
     if not password or len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
-    
+
     if save_password_hash(password):
         token = generate_token()
         return jsonify({
             'message': 'Password set successfully',
             'token': token
         }), 200
-    
+
     return jsonify({'error': 'Failed to save password'}), 500
 
 
@@ -313,13 +439,13 @@ def login():
     """Authenticate and receive JWT token."""
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
-    
+
     data = request.get_json()
     password = data.get('password')
-    
+
     if not password:
         return jsonify({'error': 'Password required'}), 400
-    
+
     if verify_password(password):
         token = generate_token()
         logger.info("Successful login")
@@ -327,7 +453,7 @@ def login():
             'message': 'Login successful',
             'token': token
         }), 200
-    
+
     logger.warning("Failed login attempt")
     return jsonify({'error': 'Invalid password'}), 401
 
@@ -347,27 +473,27 @@ def change_password():
     """Change password (requires authentication)."""
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
-    
+
     data = request.get_json()
     old_password = data.get('old_password')
     new_password = data.get('new_password')
-    
+
     if not old_password or not new_password:
         return jsonify({'error': 'Both old and new passwords required'}), 400
-    
+
     if len(new_password) < 6:
         return jsonify({'error': 'New password must be at least 6 characters'}), 400
-    
+
     if not verify_password(old_password):
         return jsonify({'error': 'Current password is incorrect'}), 401
-    
+
     if save_password_hash(new_password):
         token = generate_token()
         return jsonify({
             'message': 'Password changed successfully',
             'token': token
         }), 200
-    
+
     return jsonify({'error': 'Failed to change password'}), 500
 
 
@@ -377,7 +503,6 @@ def serve_static(path):
     file_path = os.path.join(WEB_APP_FOLDER, path)
     if os.path.isfile(file_path):
         return send_from_directory(WEB_APP_FOLDER, path)
-    # Fallback to index.html for client-side routing
     return send_from_directory(WEB_APP_FOLDER, 'index.html')
 
 
@@ -439,49 +564,65 @@ def serve_image(filename):
     return send_from_directory(IMAGE_FOLDER, filename)
 
 
+def _invalidate_thumbnail(filename):
+    """Remove cached thumbnail for a file."""
+    thumb_path = os.path.join(THUMB_DIR, filename + ".png")
+    try:
+        os.unlink(thumb_path)
+    except FileNotFoundError:
+        pass
+
+
 @app.route("/images/thumb/<filename>", methods=["GET"])
 @cross_origin()
 def serve_thumbnail(filename):
-    """Serve a thumbnail version of an image (max 150x150)."""
+    """Serve a cached thumbnail (150x150). Generates on first request."""
     from PIL import Image
     from io import BytesIO
     from flask import send_file
-    
     import urllib.parse
+
     try:
-        # Decode URL-encoded filename
         decoded_filename = urllib.parse.unquote(filename)
         file_path = os.path.join(IMAGE_FOLDER, decoded_filename)
-        logger.info(f"Thumbnail requested: {decoded_filename} -> {file_path}")
+
         # Security check
         if not os.path.abspath(file_path).startswith(os.path.abspath(IMAGE_FOLDER)):
-            raise Exception("Invalid filename")
-        # Try case-insensitive match if not found
+            raise ValueError("Invalid filename")
+
+        # Case-insensitive match fallback
         if not os.path.exists(file_path):
             files = os.listdir(IMAGE_FOLDER)
             match = next((f for f in files if f.lower() == decoded_filename.lower()), None)
             if match:
                 file_path = os.path.join(IMAGE_FOLDER, match)
+                decoded_filename = match
             else:
-                raise Exception(f"File not found: {decoded_filename}")
-        # Open and resize image
-        img = Image.open(file_path)
-        img.thumbnail((150, 150), Image.LANCZOS)
-        # Always PNG
-        fmt = 'PNG'
-        mimetype = 'image/png'
-        if img.mode not in ('RGB', 'RGBA'):
-            img = img.convert('RGBA')
-        buffer = BytesIO()
-        img.save(buffer, format=fmt, optimize=True)
-        buffer.seek(0)
-        return send_file(buffer, mimetype=mimetype)
+                raise FileNotFoundError(f"File not found: {decoded_filename}")
+
+        # Check thumbnail cache
+        thumb_path = os.path.join(THUMB_DIR, decoded_filename + ".png")
+        if os.path.exists(thumb_path):
+            src_mtime = os.path.getmtime(file_path)
+            thumb_mtime = os.path.getmtime(thumb_path)
+            if thumb_mtime >= src_mtime:
+                return send_file(thumb_path, mimetype='image/png')
+
+        # Generate thumbnail
+        with Image.open(file_path) as img:
+            img.thumbnail((150, 150), Image.LANCZOS)
+            if img.mode not in ('RGB', 'RGBA'):
+                img = img.convert('RGBA')
+            img.save(thumb_path, format='PNG', optimize=True)
+
+        return send_file(thumb_path, mimetype='image/png')
     except Exception as e:
         logger.error(f"Failed to generate thumbnail for '{filename}': {e}")
-        from PIL import Image as PILImage
-        import io
-        error_img = PILImage.new('RGBA', (1, 1), (0, 0, 0, 0))
-        buf = io.BytesIO()
+        # Return a 1x1 transparent pixel on error
+        from io import BytesIO as _BytesIO
+        from PIL import Image as _PILImage
+        error_img = _PILImage.new('RGBA', (1, 1), (0, 0, 0, 0))
+        buf = _BytesIO()
         error_img.save(buf, format='PNG')
         buf.seek(0)
         return send_file(buf, mimetype='image/png')
@@ -491,10 +632,7 @@ def serve_thumbnail(filename):
 @cross_origin()
 @token_required
 def delete_images():
-    """
-    Delete one or more image files by filename.
-    Accepts JSON: { "filenames": ["file1.jpg", "file2.png"] }
-    """
+    """Delete one or more image files by filename."""
     data = request.get_json()
     if not data or "filenames" not in data:
         return jsonify({"error": "Missing 'filenames' in request body"}), 400
@@ -506,11 +644,11 @@ def delete_images():
     deleted = []
     errors = {}
 
+    abs_image_folder = os.path.abspath(IMAGE_FOLDER)
     for filename in filenames:
         file_path = os.path.join(IMAGE_FOLDER, filename)
 
-        # Prevent directory traversal
-        if not os.path.abspath(file_path).startswith(IMAGE_FOLDER):
+        if not os.path.abspath(file_path).startswith(abs_image_folder):
             errors[filename] = "Invalid filename"
             continue
 
@@ -520,14 +658,12 @@ def delete_images():
 
         try:
             os.remove(file_path)
+            _invalidate_thumbnail(filename)
             deleted.append(filename)
         except Exception as e:
             errors[filename] = str(e)
 
     return jsonify({"deleted": deleted, "errors": errors}), 200
-
-
-ORDER_FILE = os.path.join(IMAGE_FOLDER, "order.json")
 
 
 @app.route("/images/order", methods=["GET"])
@@ -541,7 +677,6 @@ def get_image_order():
                 order = json.load(f)
             return jsonify({"order": order}), 200
         else:
-            # Return images in default alphabetical order
             image_files = sorted([
                 f for f in os.listdir(IMAGE_FOLDER)
                 if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
@@ -556,49 +691,42 @@ def get_image_order():
 @cross_origin()
 @token_required
 def set_image_order():
-    """
-    Set the image display order.
-    Accepts JSON: { "order": ["file1.jpg", "file2.png", ...] }
-    """
+    """Set the image display order."""
     import json
-    
+
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
-    
+
     data = request.get_json()
     if 'order' not in data:
         return jsonify({'error': 'Missing order array'}), 400
-    
+
     order = data['order']
     if not isinstance(order, list):
         return jsonify({'error': 'Order must be an array of filenames'}), 400
-    
-    # Validate that all files exist
+
     existing_files = set(
         f for f in os.listdir(IMAGE_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
     )
-    
+
     invalid_files = [f for f in order if f not in existing_files]
     if invalid_files:
         logger.warning(f"Order contains non-existent files: {invalid_files}")
-    
-    # Only save valid files, in the requested order
+
     valid_order = [f for f in order if f in existing_files]
-    
-    # Add any files not in the order list (new uploads) at the end
+
     for f in existing_files:
         if f not in valid_order:
             valid_order.append(f)
-    
+
     try:
         with open(ORDER_FILE, 'w') as f:
             json.dump(valid_order, f, indent=2)
         logger.info(f"Image order saved: {len(valid_order)} images")
-        
-        # Send reload to viewer to pick up new order immediately
+
         send_ctl(b"reload")
-        
+
         return jsonify({
             'message': 'Order saved successfully',
             'order': valid_order
@@ -617,15 +745,9 @@ def allowed_file(filename):
 @cross_origin()
 @token_required
 def upload_image():
-    """
-    Upload a new image file.
-    WebP files are automatically converted to PNG for compatibility.
-    Note: If overlay filesystem is enabled, this will fail silently.
-    Consider disabling overlay before uploading.
-    """
+    """Upload a new image file. WebP files are auto-converted to PNG."""
     from PIL import Image
-    
-    # Check if any file is in the request
+
     if 'image' not in request.files:
         return jsonify({'error': 'No file part in request'}), 400
 
@@ -637,19 +759,16 @@ def upload_image():
     if not allowed_file(file.filename):
         return jsonify({'error': 'File type not allowed'}), 400
 
-    # Sanitize filename
     filename = secure_filename(file.filename)
-    
+
     try:
-        # Check if it's a webp file - convert to PNG
         if filename.lower().endswith('.webp'):
             img = Image.open(file)
             if img.mode in ('RGBA', 'LA', 'P'):
                 img = img.convert('RGBA')
             else:
                 img = img.convert('RGB')
-            
-            # Change extension to .png
+
             filename = filename.rsplit('.', 1)[0] + '.png'
             save_path = os.path.join(IMAGE_FOLDER, filename)
             img.save(save_path, 'PNG', optimize=True)
@@ -658,7 +777,7 @@ def upload_image():
             save_path = os.path.join(IMAGE_FOLDER, filename)
             file.save(save_path)
             logger.info(f"Image uploaded: {filename}")
-        
+
         return jsonify({
             'message': 'File uploaded successfully',
             'filename': filename,
@@ -692,11 +811,12 @@ def set_brightness():
     except ValueError:
         return jsonify({'error': 'Brightness must be an integer'}), 400
 
-    if not send_ctl(f"brightness:{brightness}".encode()):
-        logger.warning("Could not send brightness command to LED controller")
-    
+    success = send_ctl(f"brightness:{brightness}".encode())
     save_config(brightness=brightness)
-    
+
+    if not success:
+        return jsonify({'error': 'Config saved but viewer may not be running'}), 503
+
     return jsonify({'message': f'Brightness set to {brightness}', 'brightness': brightness}), 200
 
 
@@ -719,11 +839,12 @@ def set_hold_seconds():
     except ValueError:
         return jsonify({'error': 'hold_seconds must be an integer'}), 400
 
-    if not send_ctl(f"hold:{hold_seconds}".encode()):
-        logger.warning("Could not send hold command to LED controller")
-    
+    success = send_ctl(f"hold:{hold_seconds}".encode())
     save_config(hold_seconds=hold_seconds)
-    
+
+    if not success:
+        return jsonify({'error': 'Config saved but viewer may not be running'}), 503
+
     return jsonify({'message': f'Hold seconds set to {hold_seconds}', 'hold_seconds': hold_seconds}), 200
 
 
@@ -731,64 +852,65 @@ def set_hold_seconds():
 @cross_origin()
 @token_required
 def apply_changes():
-    """
-    Apply all pending changes at once:
-    - brightness
-    - hold_seconds
-    - deleted images
-    - uploaded images (already on disk)
-    Then send reload command to viewer.
-    """
+    """Apply all pending changes (brightness, hold_seconds, deletions) then reload viewer."""
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
 
     data = request.get_json()
     errors = []
-    
-    # Apply brightness if provided
+    viewer_unreachable = False
+
     if 'brightness' in data:
         try:
             brightness = int(data['brightness'])
             if 1 <= brightness <= 100:
-                send_ctl(f"brightness:{brightness}".encode())
+                if not send_ctl(f"brightness:{brightness}".encode()):
+                    viewer_unreachable = True
                 save_config(brightness=brightness)
             else:
                 errors.append("Brightness must be between 1 and 100")
         except (ValueError, TypeError):
             errors.append("Invalid brightness value")
-    
-    # Apply hold_seconds if provided
+
     if 'hold_seconds' in data:
         try:
             hold_seconds = int(data['hold_seconds'])
             if 1 <= hold_seconds <= 3600:
-                send_ctl(f"hold:{hold_seconds}".encode())
+                if not send_ctl(f"hold:{hold_seconds}".encode()):
+                    viewer_unreachable = True
                 save_config(hold_seconds=hold_seconds)
             else:
                 errors.append("hold_seconds must be between 1 and 3600")
         except (ValueError, TypeError):
             errors.append("Invalid hold_seconds value")
-    
-    # Delete images if provided
+
     deleted = []
+    abs_image_folder = os.path.abspath(IMAGE_FOLDER)
     if 'delete_images' in data and isinstance(data['delete_images'], list):
         for filename in data['delete_images']:
             file_path = os.path.join(IMAGE_FOLDER, filename)
-            if os.path.abspath(file_path).startswith(IMAGE_FOLDER) and os.path.exists(file_path):
+            if os.path.abspath(file_path).startswith(abs_image_folder) and os.path.exists(file_path):
                 try:
                     os.remove(file_path)
+                    _invalidate_thumbnail(filename)
                     deleted.append(filename)
                 except Exception as e:
                     errors.append(f"Failed to delete {filename}: {str(e)}")
-    
-    # Send reload command to viewer to reload images and restart display
-    send_ctl(b"reload")
-    
-    return jsonify({
+
+    if not send_ctl(b"reload"):
+        viewer_unreachable = True
+
+    status_code = 200
+    result = {
         'message': 'Changes applied',
         'deleted': deleted,
         'errors': errors if errors else None
-    }), 200
+    }
+    if viewer_unreachable:
+        result['warning'] = 'Viewer may not be running — config saved but display not updated'
+        status_code = 207  # Multi-Status
+
+    return jsonify(result), status_code
 
 
 @app.route("/turn_on", methods=["POST", "GET"])
@@ -799,7 +921,7 @@ def turn_on():
     success = send_ctl(b"on")
     if success:
         return jsonify({"status": "success", "action": "on"}), 200
-    return jsonify({"status": "warning", "action": "on", "message": "Command sent but controller may not be running"}), 200
+    return jsonify({"status": "error", "action": "on", "message": "Viewer may not be running"}), 503
 
 
 @app.route("/turn_off", methods=["POST", "GET"])
@@ -810,7 +932,7 @@ def turn_off():
     success = send_ctl(b"off")
     if success:
         return jsonify({"status": "success", "action": "off"}), 200
-    return jsonify({"status": "warning", "action": "off", "message": "Command sent but controller may not be running"}), 200
+    return jsonify({"status": "error", "action": "off", "message": "Viewer may not be running"}), 503
 
 
 # =============================================================================
@@ -831,10 +953,7 @@ def overlay_status():
 @cross_origin()
 @token_required
 def disable_overlay():
-    """
-    Disable overlay filesystem to allow writes.
-    Requires reboot to take effect.
-    """
+    """Disable overlay filesystem to allow writes. Requires reboot."""
     success, message = set_overlay(False)
     if success:
         return jsonify({
@@ -849,10 +968,7 @@ def disable_overlay():
 @cross_origin()
 @token_required
 def enable_overlay():
-    """
-    Enable overlay filesystem for read-only protection.
-    Requires reboot to take effect.
-    """
+    """Enable overlay filesystem for read-only protection. Requires reboot."""
     success, message = set_overlay(True)
     if success:
         return jsonify({
@@ -874,55 +990,96 @@ def reboot():
 
 
 # =============================================================================
+# Schedule Endpoints
+# =============================================================================
+
+@app.route("/api/schedule", methods=["GET"])
+@cross_origin()
+def get_schedule():
+    """Get current schedule configuration."""
+    sched = load_schedule()
+    return jsonify(sched), 200
+
+
+@app.route("/api/schedule", methods=["POST"])
+@cross_origin()
+@token_required
+def set_schedule():
+    """Update schedule configuration."""
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+
+    data = request.get_json()
+    enabled = data.get('enabled')
+    on_time = data.get('on_time')
+    off_time = data.get('off_time')
+
+    if enabled is not None and not isinstance(enabled, bool):
+        return jsonify({'error': 'enabled must be a boolean'}), 400
+    if on_time is not None and not _TIME_RE.match(on_time):
+        return jsonify({'error': 'on_time must be in HH:MM format'}), 400
+    if off_time is not None and not _TIME_RE.match(off_time):
+        return jsonify({'error': 'off_time must be in HH:MM format'}), 400
+
+    save_schedule(enabled=enabled, on_time=on_time, off_time=off_time)
+
+    return jsonify({
+        'message': 'Schedule updated',
+        'schedule': {
+            'enabled': enabled if enabled is not None else _schedule['enabled'],
+            'on_time': on_time if on_time is not None else _schedule['on_time'],
+            'off_time': off_time if off_time is not None else _schedule['off_time'],
+        }
+    }), 200
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
 if __name__ == "__main__":
     # Set CPU affinity to core 0 only (leave cores 1-3 for viewer)
     try:
-        import os
         os.sched_setaffinity(0, {0})
         logger.info("Server CPU affinity set to core 0")
     except (AttributeError, OSError) as e:
         logger.warning(f"Could not set CPU affinity: {e}")
-    
-    import sys
-    
-    logger.info(f"Starting LED Matrix Server...")
+
+    logger.info("Starting LED Matrix Server...")
     logger.info(f"Image folder: {IMAGE_FOLDER}")
     logger.info(f"Web app folder: {WEB_APP_FOLDER}")
     logger.info(f"Config file: {CONFIG_FILE}")
-    
+
     # Check for --reset-password flag
     if "--reset-password" in sys.argv:
-        default_password = "hello123"
-        save_password_hash(default_password)
-        logger.info(f"Password reset to: {default_password}")
-        print(f"✓ Password reset to: {default_password}")
+        import secrets
+        new_pw = secrets.token_urlsafe(12)
+        save_password_hash(new_pw)
+        logger.info("Password has been reset")
+        print(f"✓ Password reset to: {new_pw}")
         sys.exit(0)
-    
+
     # Set default password if none exists
     if not is_password_set():
         default_password = "hello123"
         save_password_hash(default_password)
         logger.info(f"Default password set: {default_password}")
-    
-    # Load and log current config
+
     config = load_config()
     logger.info(f"Current config: {config}")
-    
-    # Log data directory being used
     logger.info(f"Using data directory: {DATA_DIR}")
-    logger.info(f"Images folder: {IMAGE_FOLDER}")
-    logger.info(f"Config file: {CONFIG_FILE}")
-    
+
+    # Load and start schedule
+    sched = load_schedule()
+    logger.info(f"Schedule: {sched}")
+    threading.Thread(target=schedule_thread, daemon=True).start()
+
     # Check overlay status
     overlay = is_overlay_enabled()
     if overlay is not None:
         logger.info(f"Overlay filesystem: {'enabled' if overlay else 'disabled'}")
         if overlay and DATA_DIR == PROJECT_ROOT:
-            logger.warning("⚠ Overlay is enabled but using local directories - uploads may not persist!")
-            logger.warning("⚠ Run setup_writable_data.sh to create /data/matrix for writable storage")
-    
-    # Run server
+            logger.warning("Overlay is enabled but using local directories - uploads may not persist!")
+            logger.warning("Run scripts/setup_writable_data.sh to create /data/matrix for writable storage")
+
     app.run(host="0.0.0.0", port=5000, threaded=True)

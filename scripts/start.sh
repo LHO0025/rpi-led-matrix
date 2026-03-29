@@ -39,30 +39,32 @@ fi
 mkdir -p "$PROJECT_ROOT/matrix_images"
 
 echo "Starting LED Matrix Viewer..."
-pkill -f viewer.py || true
+pkill -f "python3.*viewer.py" || true
 python3 "$PROJECT_ROOT/backend/viewer.py" > /var/log/led-matrix-viewer.log 2>&1 &
 VIEWER_PID=$!
+echo $VIEWER_PID > /tmp/led-matrix-viewer.pid
 sleep 2
 
 if ! kill -0 $VIEWER_PID 2>/dev/null; then
     echo -e "${RED}Viewer failed to start${NC}"
+    rm -f /tmp/led-matrix-viewer.pid
     exit 1
 fi
 
 echo "Starting Web Server..."
-pkill -f server.py || true
+pkill -f "python3.*server.py" || true
 python3 "$PROJECT_ROOT/backend/server.py" > /var/log/led-matrix-server.log 2>&1 &
 SERVER_PID=$!
+echo $SERVER_PID > /tmp/led-matrix-server.pid
 sleep 2
 
 if ! kill -0 $SERVER_PID 2>/dev/null; then
     echo -e "${RED}Server failed to start${NC}"
+    rm -f /tmp/led-matrix-server.pid
     kill $VIEWER_PID 2>/dev/null || true
+    rm -f /tmp/led-matrix-viewer.pid
     exit 1
 fi
-
-echo $VIEWER_PID > /tmp/led-matrix-viewer.pid
-echo $SERVER_PID > /tmp/led-matrix-server.pid
 
 echo ""
 echo -e "${GREEN}System Started${NC}"

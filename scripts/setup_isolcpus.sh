@@ -30,6 +30,12 @@ sudo cp "$CMDLINE_FILE" "${CMDLINE_FILE}.backup"
 echo "Adding isolcpus=3 to $CMDLINE_FILE..."
 sudo sed -i 's/$/ isolcpus=3/' "$CMDLINE_FILE"
 
+# Verify the change was applied
+if ! grep -q "isolcpus=3" "$CMDLINE_FILE"; then
+    echo "ERROR: Failed to add isolcpus=3 to $CMDLINE_FILE"
+    exit 1
+fi
+
 echo ""
 echo "Done! New contents of $CMDLINE_FILE:"
 cat "$CMDLINE_FILE"

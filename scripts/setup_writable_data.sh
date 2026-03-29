@@ -8,8 +8,8 @@ set -euo pipefail
 # Optional:
 #   sudo ./setup_persistent_data.sh /dev/sda1 --format   # DANGEROUS: formats the partition as ext4
 
-USER_NAME="pi"
-GROUP_NAME="pi"
+USER_NAME="${SUDO_USER:-pi}"
+GROUP_NAME="${SUDO_USER:-pi}"
 MOUNT_POINT="/data"
 DATA_DIR="/data/matrix"
 

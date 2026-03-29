@@ -18,11 +18,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVICE_NAME="led-matrix-system"
 
-echo "[1/5] Installing Python dependencies..."
+HOSTNAME="ledmatrix"
+
+echo "[1/6] Setting up mDNS hostname..."
+# Install avahi for .local mDNS resolution
+apt-get install -y avahi-daemon > /dev/null 2>&1 || true
+systemctl enable avahi-daemon > /dev/null 2>&1 || true
+systemctl start avahi-daemon > /dev/null 2>&1 || true
+
+# Set hostname to "ledmatrix" so the device is reachable at ledmatrix.local
+CURRENT_HOSTNAME="$(hostname)"
+if [ "$CURRENT_HOSTNAME" != "$HOSTNAME" ]; then
+    echo "$HOSTNAME" > /etc/hostname
+    sed -i "s/127\.0\.1\.1.*$/127.0.1.1\t$HOSTNAME/" /etc/hosts
+    hostnamectl set-hostname "$HOSTNAME" 2>/dev/null || true
+    echo "Hostname set to $HOSTNAME (reachable at $HOSTNAME.local)"
+else
+    echo "Hostname already set to $HOSTNAME"
+fi
+
+echo "[2/6] Installing Python dependencies..."
 cd "$PROJECT_ROOT"
 pip3 install -r requirements.txt
 
-echo "[2/5] Building web application..."
+echo "[3/6] Building web application..."
 if [ -d "$PROJECT_ROOT/frontend" ]; then
     cd "$PROJECT_ROOT/frontend"
     npm install
@@ -30,7 +49,7 @@ if [ -d "$PROJECT_ROOT/frontend" ]; then
     cd "$PROJECT_ROOT"
 fi
 
-echo "[3/5] Setting up configuration..."
+echo "[4/6] Setting up configuration..."
 # Create default config
 if [ ! -f "$PROJECT_ROOT/config.ini" ]; then
     cat > "$PROJECT_ROOT/config.ini" << EOF
@@ -52,7 +71,7 @@ mkdir -p "$PROJECT_ROOT/matrix_images"
 # Make scripts executable
 chmod +x "$SCRIPT_DIR/start.sh" "$SCRIPT_DIR/stop.sh" "$SCRIPT_DIR/deploy.sh"
 
-echo "[4/5] Setting up systemd service..."
+echo "[5/6] Setting up systemd service..."
 cat > /etc/systemd/system/$SERVICE_NAME.service << EOF
 [Unit]
 Description=LED Matrix System (Viewer + Web Server)
@@ -74,11 +93,12 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
-echo "[5/5] Setting up permissions..."
-# Sudoers for overlay management
+echo "[6/6] Setting up permissions..."
+# Sudoers for overlay management — use actual user, not hardcoded "pi"
+DEPLOY_USER="${SUDO_USER:-pi}"
 if [ ! -f /etc/sudoers.d/led-matrix ]; then
-    echo "pi ALL=(ALL) NOPASSWD: /usr/bin/raspi-config" > /etc/sudoers.d/led-matrix
-    echo "pi ALL=(ALL) NOPASSWD: /sbin/reboot" >> /etc/sudoers.d/led-matrix
+    echo "$DEPLOY_USER ALL=(ALL) NOPASSWD: /usr/bin/raspi-config" > /etc/sudoers.d/led-matrix
+    echo "$DEPLOY_USER ALL=(ALL) NOPASSWD: /sbin/reboot" >> /etc/sudoers.d/led-matrix
     chmod 440 /etc/sudoers.d/led-matrix
 fi
 
@@ -90,7 +110,13 @@ systemctl start $SERVICE_NAME
 echo ""
 echo "=== Deployment Complete ==="
 echo ""
-echo "Web interface: http://$(hostname -I | awk '{print $1}'):5000"
+echo "Web interface:"
+echo "  http://$HOSTNAME.local:5000  (any device on the same WiFi)"
+echo "  http://$(hostname -I | awk '{print $1}'):5000"
+echo ""
+echo "To install as an app on iPhone:"
+echo "  1. Open http://$HOSTNAME.local:5000 in Safari"
+echo "  2. Tap Share > Add to Home Screen"
 echo ""
 echo "Commands:"
 echo "  sudo $SCRIPT_DIR/start.sh       - Start system"
